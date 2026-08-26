@@ -45,6 +45,8 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
   - [Preflight: dry-run local de los 19 gates](./contracts/preflight.md)
   - [Auditor de seals débiles (advisory, no es un gate)](./contracts/seal-audit.md) — `scripts/audit_seals.py`
   - [Auditor de `forbids` (advisory, no es un gate)](./contracts/forbids-audit.md) — `scripts/audit_forbids.py`
+  - [Hook runtime — QuickJS embebido (GoPress)](./contracts/hooks-runtime.md)
+  - [Hook registry — dispatch por point + prioridad (GoPress)](./contracts/hooks-registry.md)
 - [Recetas de arreglo por rule-id (no es un gate)](./contracts/rule-hints.md) — `scripts/rule_hints.py`
   - [Validador OKF de la base de conocimiento](./contracts/validate-okf.md)
   - [Validador de contratos de ejecución (specs)](./contracts/validate-specs.md)
@@ -56,6 +58,8 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
   - [Regla de contexto presupuestado en las reglas de agentes](./contracts/agents-context-rule.md)
 - [Modelos de Datos](./data_models/)
   - [Tabla users](./data_models/users_table.md)
+  - [Schema baseline del CMS](./data_models/cms_schema.md)
+  - [Hook points del CMS](./data_models/hook_points.md)
   - [Limites de pago por pais](./data_models/payment_limits.md)
   - [Reglas de control de fronteras](./data_models/border_rules.md)
   - [Politica de workflows](./data_models/workflow_policy.md)

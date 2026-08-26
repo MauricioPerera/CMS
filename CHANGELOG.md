@@ -4,7 +4,20 @@ All notable changes to the KDD Template are documented here.
 
 ## Unreleased
 
-_Sin cambios pendientes._
+- **C34 — DB + migraciones baseline (GoPress).** Primer contrato de ejecución del proyecto
+  CMS Go+SQLite+plugins JS (`DEFINITION.md` en la raíz). Incluye `go.mod` baseline,
+  `internal/db/init.go` (wrapper golang-migrate sobre modernc.org/sqlite), migraciones
+  versionadas `db/migrations/001_init.{up,down}.sql` (posts, users, sessions, options con
+  constraints CHECK/UNIQUE/FK), oráculo `internal/db/migrations_test.go` (5 tests, sello
+  `tests_sha256` `6590d85d…`), data model OKF `knowledge/data_models/cms_schema.md`
+  (enlazado desde `index.md`), task contract `knowledge/contracts/db-migrations.md` y
+  reporte `docs/reports/CONTRACT-34-REPORT.md`. Hallazgo documentado: golang-migrate
+  `iofs.PartialDriver` interpreta `-- +goose Up`/`-- +goose Down` como directives y
+  silencia el SQL entre ellos → migraciones `.up.sql`/`.down.sql` no usan directives.
+  Go build con `CGO_ENABLED=1` (provisto por QuickJS desde C2).
+
+**Contract 34 — DB + migraciones baseline (GoPress)** ([C34-REPORT](docs/reports/CONTRACT-34-REPORT.md))
+**Contract 35 — Hook system (QuickJS plugins)** ([C35-REPORT](docs/reports/CONTRACT-35-REPORT.md)): task contracts `hooks-runtime.md` + `hooks-registry.md` con oráculo congelado en `internal/hooks/hooks_test.go` (12 tests, SHA256 `5f14c71be0bf8d2c01d9f5b7bcfd64d74aac4880e195050ea88d2c52187dbc2f`), data model OKF `knowledge/data_models/hook_points.md` (enlazado desde `index.md`), spec `specs/CONTRACT-35-hooks.md`, dependencia `github.com/buke/quickjs-go@v0.7.7` en `go.mod`, implementación real en `internal/hooks/{runtime,registry}.go` (CGO_ENABLED=1, 12/12 tests PASS incl. thread-safe `ConcurrentSafe` via runtime nuevo por Exec). Límite documentado: QuickJS `SetExecuteTimeout` no aborta Eval sync busy-loops; el test `TestRuntime_TimeoutConfiguresHandler` verifica que el handler se instala.
 
 ## v1.12.0 — 2026-07-26
 
