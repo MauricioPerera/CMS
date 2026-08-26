@@ -60,6 +60,7 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
   - [Tabla users](./data_models/users_table.md)
   - [Schema baseline del CMS](./data_models/cms_schema.md)
   - [Hook points del CMS](./data_models/hook_points.md)
+  - [Posts CRUD del CMS](./data_models/posts_crud.md)
   - [Limites de pago por pais](./data_models/payment_limits.md)
   - [Reglas de control de fronteras](./data_models/border_rules.md)
   - [Politica de workflows](./data_models/workflow_policy.md)

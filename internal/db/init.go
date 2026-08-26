@@ -10,6 +10,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source"
+	_ "github.com/golang-migrate/migrate/v4/source/file" // register driver "file" para source.Open("file://...").
 )
 
 // sourceDriver abre el source file:// usando el registry de schemes registrado

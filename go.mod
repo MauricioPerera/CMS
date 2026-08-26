@@ -2,10 +2,13 @@ module gopress
 
 go 1.22
 
-require github.com/golang-migrate/migrate/v4 v4.15.2
+require (
+	github.com/buke/quickjs-go v0.7.7
+	github.com/golang-migrate/migrate/v4 v4.15.2
+	modernc.org/sqlite v1.10.6
+)
 
 require (
-	github.com/buke/quickjs-go v0.7.7 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
@@ -22,7 +25,6 @@ require (
 	modernc.org/mathutil v1.2.2 // indirect
 	modernc.org/memory v1.0.4 // indirect
 	modernc.org/opt v0.1.1 // indirect
-	modernc.org/sqlite v1.10.6 // indirect
 	modernc.org/strutil v1.1.0 // indirect
 	modernc.org/token v1.0.0 // indirect
 )
