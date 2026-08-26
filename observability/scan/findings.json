@@ -1,62 +1,35 @@
 {
   "documentType": "kdd-observability.findings",
   "schemaVersion": "1.0",
-  "scanId": "posts_readpath_observability_c41",
-  "scannedPath": "internal/posts",
+  "scanId": "f9b47f7_kdd-observability-rescan-c44",
+  "scanTarget": "internal/posts (post-C43) - re-scan de findings C41",
   "findings": [
     {
-      "findingId": "obs_posts_list_error_silent",
+      "findingId": "obs_posts_http_error_silent-residual-001",
       "gapType": "unlogged-error-path",
-      "location": "internal/posts/posts.go: func (s *Posts) List (query/scan/rows.Err)",
+      "location": "internal/posts/http.go: NewHandler default Logger is slog.Default() (not configurable without opt); tests use error level but production could swallow if caller does not inject logger",
       "criticalPath": true,
-      "severity": "high",
-      "remediation": "Emitir un error structurado (structured log / tracing span) cuando Query, Scan o rows.Err falla en List, incluyendo limit/offset/status/authorId/tag para poder correlacionar timeouts o errores de SQLite en el read path paginado.",
-      "source": "static-review + kdd-observability-scan"
+      "severity": "low",
+      "remediation": "Documentar que NewHandler REQUIERE WithLogger en produccion (no rely en slog.Default sino en injection explicita con salida estructurada).",
+      "source": "manual review -- post-C43 rescan"
     },
     {
-      "findingId": "obs_posts_listrendered_hook_silent",
-      "gapType": "unlogged-error-path",
-      "location": "internal/posts/render.go: func (s *Posts) ListRendered / renderHook / filterHook",
-      "criticalPath": true,
-      "severity": "high",
-      "remediation": "Loggear cuando post.render o content.filter retornan error o {ok:false} (incluye postID, point y mensaje) en lugar de propagar silenciosamente al fallback; esto oculta fallos de hooks en producción.",
-      "source": "static-review + kdd-observability-scan"
-    },
-    {
-      "findingId": "obs_posts_readpath_no_tracing",
-      "gapType": "no-tracing",
-      "location": "internal/posts/*.go (read path: Get/GetBySlug/GetRendered/GetBySlugRendered/List/ListRendered)",
-      "criticalPath": true,
-      "severity": "medium",
-      "remediation": "Iniciar un span de tracing (OpenTelemetry/W3) por request en cada método de read path, propagando traceparent; sin spans no se puede debuggear latencia end-to-end del read path.",
-      "source": "static-review + kdd-observability-scan"
-    },
-    {
-      "findingId": "obs_posts_readpath_no_metrics",
-      "gapType": "no-metrics",
-      "location": "internal/posts/*.go (read path)",
-      "criticalPath": true,
-      "severity": "medium",
-      "remediation": "Instrumentar contadores de throughput (posts.list, posts.get), histograma de latencia (p95/p99) y counter de errores por endpoint; exponer vía /metrics.",
-      "source": "static-review + kdd-observability-scan"
-    },
-    {
-      "findingId": "obs_sanitize_strips_xss_silent",
+      "findingId": "obs_sanitize_strips_xss_silent-residual-002",
       "gapType": "silent-failure",
-      "location": "internal/posts/render.go: func Sanitize",
+      "location": "internal/posts/render.go:142 Sanitize(html) -- IncSanitizeStripped() nunca se invoca desde Sanitize (counter siempre 0 a pesar de existir en Metrics)",
       "criticalPath": false,
       "severity": "low",
-      "remediation": "Sanitize estrippa vectores XSS (script/on*/javascript:) sin emitir log ni métrica; sumar un counter 'posts.sanitize.stripped' para observar intentos de inyección en el read path.",
-      "source": "static-review + kdd-observability-scan"
+      "remediation": "Hacer que Sanitize reciba *Metrics (o que filterHook llame a m.IncSanitizeStripped() cuando len(out) < len(in)) para exponer intentos de inyeccion XSS estrippeados.",
+      "source": "manual review -- post-C43 rescan"
     },
     {
-      "findingId": "obs_no_alerting_readpath",
+      "findingId": "obs_no_alerting_readpath-residual-003",
       "gapType": "no-alerting",
-      "location": "internal/posts/*.go (read path)",
+      "location": "internal/posts/http.go: GET /metrics expone counters pero no hay alertas definidas (SLA/saturation/errors) en el repo; es configuracion de infra (PrometheusRule), fuera del codigo Go",
       "criticalPath": false,
-      "severity": "low",
-      "remediation": "No hay alerts configurados para errores de read path (5xx en List/GetRendered) ni para latencia > p95; definir SLO y alertas de PagerDuty sobre el contenedor posts.",
-      "source": "static-review + kdd-observability-scan"
+      "severity": "informational",
+      "remediation": "Definir alertas SLO sobre /metrics: error_rate > 5%, p95 latency > 500ms (PrometheusRule/Alertmanager), documentado en knowledge/data_models/posts_race_analysis.md o nuevo nodo ops.",
+      "source": "manual review -- post-C43 rescan"
     }
   ]
 }
