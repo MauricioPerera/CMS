@@ -161,15 +161,10 @@ func (s *Posts) Get(id int64) (Post, error) {
 
 // GetBySlug retorna un post por slug (read-only, sin hook).
 func (s *Posts) GetBySlug(slug string) (Post, error) {
-	const q = `SELECT id, slug, title, content, status, created_at, updated_at FROM posts WHERE slug = ?`
-	row := s.dbh.QueryRow(q, slug)
-	var p Post
-	var createdAt, updatedAt string
-	if err := row.Scan(&p.ID, &p.Slug, &p.Title, &p.Content, &p.Status, &createdAt, &updatedAt); err != nil {
-		return Post{}, fmt.Errorf("GetBySlug: %w", err)
+	p, err := s.getBySlug(slug)
+	if err != nil {
+		return Post{}, wrapErr("GetBySlug", err)
 	}
-	p.CreatedAt = parseTime(createdAt)
-	p.UpdatedAt = parseTime(updatedAt)
 	return p, nil
 }
 

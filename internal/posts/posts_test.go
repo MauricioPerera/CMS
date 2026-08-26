@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite" // register driver "sqlite".
@@ -220,5 +221,178 @@ func TestGet_NotFound(t *testing.T) {
 	}
 	if _, err := s.GetBySlug("nope"); err == nil {
 		t.Error("GetBySlug('nope') debería fallar")
+	}
+}
+
+// === C37: posts-render (Markdown→HTML + hooks) ===
+
+func TestRenderMarkdown_Fallback(t *testing.T) {
+	got := renderMarkdown("# Hola\n\n**negrita** y `code`\n\n- item1\n- item2")
+	if !strings.Contains(got, "<h1>Hola</h1>") {
+		t.Errorf("header h1 faltante: %s", got)
+	}
+	if !strings.Contains(got, "<strong>negrita</strong>") {
+		t.Errorf("strong faltante: %s", got)
+	}
+	if !strings.Contains(got, "<code>code</code>") {
+		t.Errorf("code faltante: %s", got)
+	}
+	if !strings.Contains(got, "<ul>") || !strings.Contains(got, "<li>item1</li>") {
+		t.Errorf("lista faltante: %s", got)
+	}
+}
+
+func TestRenderMarkdown_Empty(t *testing.T) {
+	if renderMarkdown("") != "" {
+		t.Errorf("empty debe dar empty: %q", renderMarkdown(""))
+	}
+}
+
+func TestGetRendered_FallbackMarkdown(t *testing.T) {
+	dbh := freshDB(t)
+	// runtime con hook post.validate pero SIN post.render → fallback Markdown.
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "render", Title: "R", Content: "# Título\n\npárrafo",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	rp, err := s.GetRendered(hooks.Context{Point: "post.render"}, post.ID)
+	if err != nil {
+		t.Fatalf("GetRendered: %v", err)
+	}
+	if !strings.Contains(rp.HTML, "<h1>Título</h1>") {
+		t.Errorf("HTML no tiene h1: %s", rp.HTML)
+	}
+	// Content raw preservado.
+	if rp.Content != "# Título\n\npárrafo" {
+		t.Errorf("Content raw mutado: %q", rp.Content)
+	}
+}
+
+// hookRenderJS retorna HTML desde el Markdown.
+const hookRenderJS = `function(ctx, payload) { return { ok: true, html: "<p>rendered:" + payload.post.content + "</p>" }; }`
+
+func TestGetRendered_WithHook(t *testing.T) {
+	dbh := freshDB(t)
+	rt := hooks.NewRuntime(hooks.WithMemoryLimit(32), hooks.WithTimeout(0))
+	t.Cleanup(func() { rt.Close() })
+	reg := hooks.NewRegistry(rt)
+	if err := reg.Register("post.render", "render", 50, true, hookRenderJS); err != nil {
+		t.Fatalf("Register render: %v", err)
+	}
+	if err := reg.Register("post.validate", "v", 50, true, hookOK); err != nil {
+		t.Fatalf("Register validate: %v", err)
+	}
+
+	s := NewPosts(dbh, rt, reg)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "hooked", Title: "H", Content: "# Raw",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	rp, err := s.GetRendered(hooks.Context{Point: "post.render"}, post.ID)
+	if err != nil {
+		t.Fatalf("GetRendered: %v", err)
+	}
+	if rp.HTML != "<p>rendered:# Raw</p>" {
+		t.Errorf("HTML = %q, quiere %q", rp.HTML, "<p>rendered:# Raw</p>")
+	}
+}
+
+// hookrejectJS rechaza el render.
+const hookRejectRender = `function(ctx, payload) { return { ok: false, error: "no render" }; }`
+
+func TestGetRendered_HookRejects(t *testing.T) {
+	dbh := freshDB(t)
+	rt := hooks.NewRuntime(hooks.WithMemoryLimit(32), hooks.WithTimeout(0))
+	t.Cleanup(func() { rt.Close() })
+	reg := hooks.NewRegistry(rt)
+	if err := reg.Register("post.render", "reject", 50, true, hookRejectRender); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := reg.Register("post.validate", "v", 50, true, hookOK); err != nil {
+		t.Fatalf("Register validate: %v", err)
+	}
+
+	s := NewPosts(dbh, rt, reg)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "rejected", Title: "R", Content: "x",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.GetRendered(hooks.Context{Point: "post.render"}, post.ID); err == nil {
+		t.Error("GetRendered con hook rechazando debería fallar")
+	}
+}
+
+// hookFilterJS muta el HTML (content.filter).
+const hookFilterJS = `function(ctx, payload) { return { ok: true, html: payload.html + " [filtered]" }; }`
+
+func TestContentFilterApplied(t *testing.T) {
+	dbh := freshDB(t)
+	rt := hooks.NewRuntime(hooks.WithMemoryLimit(32), hooks.WithTimeout(0))
+	t.Cleanup(func() { rt.Close() })
+	reg := hooks.NewRegistry(rt)
+	if err := reg.Register("post.render", "r", 50, true, `function(ctx, p) { return { ok: true, html: "<p>" + p.post.content + "</p>" }; }`); err != nil {
+		t.Fatalf("Register render: %v", err)
+	}
+	if err := reg.Register("content.filter", "f", 50, true, hookFilterJS); err != nil {
+		t.Fatalf("Register filter: %v", err)
+	}
+	if err := reg.Register("post.validate", "v", 50, true, hookOK); err != nil {
+		t.Fatalf("Register validate: %v", err)
+	}
+
+	s := NewPosts(dbh, rt, reg)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "filtered", Title: "F", Content: "hola",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	rp, err := s.GetRendered(hooks.Context{Point: "post.render"}, post.ID)
+	if err != nil {
+		t.Fatalf("GetRendered: %v", err)
+	}
+	if !strings.Contains(rp.HTML, "<p>hola</p>") {
+		t.Errorf("post.render HTML: %s", rp.HTML)
+	}
+	if !strings.Contains(rp.HTML, "[filtered]") {
+		t.Errorf("content.filter no aplicado: %s", rp.HTML)
+	}
+}
+
+func TestGet_StillReturnsRawContent(t *testing.T) {
+	dbh := freshDB(t)
+	rt := hooks.NewRuntime(hooks.WithMemoryLimit(32), hooks.WithTimeout(0))
+	t.Cleanup(func() { rt.Close() })
+	reg := hooks.NewRegistry(rt)
+	// Registrar post.render que MUTARÍA content — Get NO debe usarlo.
+	if err := reg.Register("post.render", "mutate", 50, true, `function(ctx, p) { return { ok: true, html: "MUTATED" }; }`); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := reg.Register("post.validate", "v", 50, true, hookOK); err != nil {
+		t.Fatalf("Register validate: %v", err)
+	}
+	s := NewPosts(dbh, rt, reg)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "raw", Title: "R", Content: "# Markdown raw",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, err := s.Get(post.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	// Get preserva Content raw (NO ejecuta post.render).
+	if got.Content != "# Markdown raw" {
+		t.Errorf("Get mutó Content: %q", got.Content)
 	}
 }
