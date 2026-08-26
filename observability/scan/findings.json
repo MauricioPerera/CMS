@@ -1,35 +1,26 @@
 {
   "documentType": "kdd-observability.findings",
   "schemaVersion": "1.0",
-  "scanId": "f9b47f7_kdd-observability-rescan-c44",
-  "scanTarget": "internal/posts (post-C43) - re-scan de findings C41",
+  "scanId": "c45_post_wiring_kdd-observability",
+  "scanTarget": "internal/posts (post-C45) - SanitizeStripped wiring verificado",
   "findings": [
     {
       "findingId": "obs_posts_http_error_silent-residual-001",
       "gapType": "unlogged-error-path",
-      "location": "internal/posts/http.go: NewHandler default Logger is slog.Default() (not configurable without opt); tests use error level but production could swallow if caller does not inject logger",
+      "location": "internal/posts/http.go: NewHandler usa slog.Default() si no se inyecta WithLogger",
       "criticalPath": true,
       "severity": "low",
-      "remediation": "Documentar que NewHandler REQUIERE WithLogger en produccion (no rely en slog.Default sino en injection explicita con salida estructurada).",
-      "source": "manual review -- post-C43 rescan"
-    },
-    {
-      "findingId": "obs_sanitize_strips_xss_silent-residual-002",
-      "gapType": "silent-failure",
-      "location": "internal/posts/render.go:142 Sanitize(html) -- IncSanitizeStripped() nunca se invoca desde Sanitize (counter siempre 0 a pesar de existir en Metrics)",
-      "criticalPath": false,
-      "severity": "low",
-      "remediation": "Hacer que Sanitize reciba *Metrics (o que filterHook llame a m.IncSanitizeStripped() cuando len(out) < len(in)) para exponer intentos de inyeccion XSS estrippeados.",
-      "source": "manual review -- post-C43 rescan"
+      "remediation": "Documentar que NewHandler REQUIERE WithLogger en prod para output estructurado explicito; no rely en slog.Default().",
+      "source": "manual review -- post-C45 rescan"
     },
     {
       "findingId": "obs_no_alerting_readpath-residual-003",
       "gapType": "no-alerting",
-      "location": "internal/posts/http.go: GET /metrics expone counters pero no hay alertas definidas (SLA/saturation/errors) en el repo; es configuracion de infra (PrometheusRule), fuera del codigo Go",
+      "location": "internal/posts/http.go: GET /metrics expone counters pero no hay alertas (PrometheusRule) definidas; configuracion de infra",
       "criticalPath": false,
       "severity": "informational",
-      "remediation": "Definir alertas SLO sobre /metrics: error_rate > 5%, p95 latency > 500ms (PrometheusRule/Alertmanager), documentado en knowledge/data_models/posts_race_analysis.md o nuevo nodo ops.",
-      "source": "manual review -- post-C43 rescan"
+      "remediation": "Definir SLO sobre /metrics: error_rate > 5%, p95 latency > 500ms (PrometheusRule/Alertmanager) en un nodo ops.",
+      "source": "manual review -- post-C45 rescan"
     }
   ]
 }

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,5 +211,74 @@ func TestHandler_MetricsEndpoint(t *testing.T) {
 	}
 	if _, ok := snap["requests"]; !ok {
 		t.Error("missing 'requests' en metrics")
+	}
+}
+
+// === C45: wiring SanitizeStripped metrics (remedia C44 residual #2) ===
+
+func TestSanitize_WiredViaHandler(t *testing.T) {
+	// content inseguro → ListRendered → Sanitize estrippa → counter > 0.
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	m := &Metrics{}
+	s.SetMetrics(m)
+
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "xss-c45", Title: "X", Content: "<script>alert(1)</script># Hola",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.Publish(hooks.Context{Point: "post.validate"}, post.ID); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	res, err := s.ListRendered(hooks.Context{Point: "post.render"}, ListInput{Limit: 10, Status: ""})
+	if err != nil {
+		t.Fatalf("ListRendered: %v", err)
+	}
+	if len(res.Items) != 1 {
+		t.Fatalf("items = %d", len(res.Items))
+	}
+	if strings.Contains(res.Items[0].HTML, "<script>") {
+		t.Errorf("HTML contiene <script>: %q", res.Items[0].HTML)
+	}
+	// El strip de <script> debe incrementar SanitizeStripped.
+	if m.SanitizeStripped <= 0 {
+		t.Errorf("SanitizeStripped = %d, quiere > 0 (C44 residual #2)", m.SanitizeStripped)
+	}
+}
+
+func TestHandler_ListRendered_IncidentsMetric(t *testing.T) {
+	// Verifica que el Handler expone sanitize_stripped vía /metrics después de
+	// renderizar un post con content inseguro.
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	m := &Metrics{}
+	s.SetMetrics(m)
+	h := NewHandler(s)
+
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "m-c45", Title: "M", Content: "<img src=x onerror=alert(1)>texto",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.Publish(hooks.Context{Point: "post.validate"}, post.ID); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	// Render vía handler GetBySlugRendered (ejerce el chain completo + metrics).
+	req := httptest.NewRequest("GET", "/posts/s/m-c45", nil)
+	rec := httptest.NewRecorder()
+	h.GetBySlugRendered(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	// El onerror=... debe haber sido estrippeado → SanitizeStripped > 0.
+	if m.SanitizeStripped <= 0 {
+		t.Errorf("SanitizeStripped = %d, quiere > 0", m.SanitizeStripped)
 	}
 }

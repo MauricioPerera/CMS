@@ -28,28 +28,24 @@ Validator: `python scripts/validate_observability_findings.py`
 | `obs_sanitize_strips_xss_silent` | low | ❌ **residual** | `IncSanitizeStripped()` definido pero **nunca llamado** desde `Sanitize` → counter siempre 0. |
 | `obs_no_alerting_readpath` | low (criticalPath) | ⚠️ **parcial** | `/metrics` expuesto pero sin alertas definidas (es configuración de infra: PrometheusRule/Alertmanager). |
 
-## Findings residuales C44 (3)
+## Findings residuales C44 (1 tras C45)
+
+C45 (wiring `SanitizeStripped` en `filterHook`) remedica el residual #2. Tras C45 queda:
 
 1. **`obs_posts_http_error_silent-residual-001`** (`unlogged-error-path`, **low**, criticalPath):
-   `NewHandler` usa `slog.Default()` si no se inyecta `WithLogger`; en prod sin logger explícito
-   podría enviar a stderr no estructurado. Remediation: documentar inyección obligatoria.
-
-2. **`obs_sanitize_strips_xss_silent-residual-002`** (`silent-failure`, **low**):
-   `Sanitize` (render.go:142) no incrementa `Metrics.SanitizeStripped` → no se observa
-   intentos de inyección XSS estrippeados. Remediation: pasar `*Metrics` a `filterHook` o
-   hacer `Sanitize` recibirlo.
-
-3. **`obs_no_alerting_readpath-residual-003`** (`no-alerting`, **informational**):
-   Sin reglas de alerta (SLO/error_rate/p95) en el repo; es configuración de infra, fuera
-   del código Go. Remediation: nuevo nodo ops o `knowledge/data_models/` con SLO/alerts.
+   `NewHandler` usa `slog.Default()` si no se inyecta `WithLogger`; en prod sin logger
+   explícito podría enviar a stderr no estructurado. Remediation: documentar inyección
+   obligaria de `WithLogger` en producción.
 
 ## Cierre del ciclo observabilidad
 
-C41 (scan baseline) → C43 (remediar) → C44 (re-scan verification) demuestra el ciclo
-KDD de observabilidad: el scan es **versionable y gateable**, y su re-scan post-
-implementación **reduce cuantificablemente** los gaps (6 → 3, severidad alta → baja).
+C41 (scan baseline) → C43 (remediar) → C44 (re-scan verification) → C45 (wiring SanitizeStripped)
+demuestra el ciclo KDD de observabilidad: el scan es **versionable y gateable**, y su
+re-scan post-implementación **reduce cuantificablemente** los gaps (6 → 1 tras C45;
+los 4 findings de severidad high/medium/criticalPath fueron remedicados por C43, el
+residual `sanitize_strips_xss_silent` fue cerrado por C45; queda 1 residual low/informational
+que es configuración de infra, fuera del código Go).
 
-## Próximos contratos
+## Próximo contrato
 
-- **C45**: wiring de `SanitizeStripped` en `filterHook` (resolver residual #2).
-- **C46**: SLO/alerts operacionales (resolver residual #3 — fuera de código Go).
+- **C46**: SLO/alerts operacionales (resolver residual C44 #1 — infra/PrometheusRule).

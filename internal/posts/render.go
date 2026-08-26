@@ -109,17 +109,17 @@ func (s *Posts) renderHook(ctx hooks.Context, p Post) (string, error) {
 }
 
 // filterHook ejecuta content.filter sobre html; si no hay hook, aplica Sanitize fallback
-// (defensivo contra XSS) y retorna el HTML sanitizado. C39.
+// (defensivo contra XSS) y retorna el HTML sanitizado. C39/C45: reporta strips a metrics.
 func (s *Posts) filterHook(ctx hooks.Context, p Post, html string) (string, error) {
 	if s.reg == nil || s.rt == nil {
-		return Sanitize(html), nil
+		return s.sanitizeWithMetrics(html), nil
 	}
 	payload := map[string]any{"html": html}
 	filterCtx := hooks.Context{Point: "content.filter"}
 	result, err := s.reg.Call(filterCtx.Point, payload)
 	if err != nil {
 		// content.filter es opcional: si no hay hook registrado, sanitiza fallback.
-		return Sanitize(html), nil
+		return s.sanitizeWithMetrics(html), nil
 	}
 	ok, _ := result["ok"].(bool)
 	if !ok {
@@ -132,7 +132,16 @@ func (s *Posts) filterHook(ctx hooks.Context, p Post, html string) (string, erro
 	if filtered, _ := result["html"].(string); filtered != "" {
 		return filtered, nil
 	}
-	return Sanitize(html), nil
+	return s.sanitizeWithMetrics(html), nil
+}
+
+// sanitizeWithMetrics aplica Sanitize y reporta el strip a metrics (C45).
+func (s *Posts) sanitizeWithMetrics(html string) string {
+	out := Sanitize(html)
+	if len(out) < len(html) {
+		s.incSanitizeStripped()
+	}
+	return out
 }
 
 // Sanitize es el fallback defensivo de content.filter: elimina vectores XSS comunes

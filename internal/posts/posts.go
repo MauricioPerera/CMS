@@ -42,16 +42,31 @@ type UpdateInput struct {
 }
 
 // Posts es el store de posts. Comparte el Runtime+Registry de QuickJS (C2) para
-// el hook post.validate.
+// el hook post.validate. El campo metrics (C45) es opcional (nil-safe): si se
+// inyecta, filterHook/Sanitize reportan strips XSS a través de él.
 type Posts struct {
-	dbh *sql.DB
-	rt  *hooks.Runtime
-	reg *hooks.Registry
+	dbh     *sql.DB
+	rt      *hooks.Runtime
+	reg     *hooks.Registry
+	metrics *Metrics
 }
 
 // NewPosts construye el store. El runtime/registry pueden ser nil (desactiva hooks).
 func NewPosts(dbh *sql.DB, rt *hooks.Runtime, reg *hooks.Registry) *Posts {
 	return &Posts{dbh: dbh, rt: rt, reg: reg}
+}
+
+// SetMetrics inyecta el collector de observabilidad (C45). nil-safe: si m es nil
+// no reporta (comportamiento preservado para tests/oráculos anteriores).
+func (s *Posts) SetMetrics(m *Metrics) {
+	s.metrics = m
+}
+
+// incSanitizeStripped reporta un strip de Sanitize (C45); no-op si no hay metrics.
+func (s *Posts) incSanitizeStripped() {
+	if s.metrics != nil {
+		s.metrics.IncSanitizeStripped()
+	}
 }
 
 // validateHook ejecuta post.validate antes de una escritura. Si el hook retorna
