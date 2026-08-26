@@ -12,7 +12,21 @@ Validator: `python scripts/validate_observability_findings.py`
 | `preflight.py` (gate observabilidad) | ✅ PASS | incluido en 19/19 |
 | Build/vet | ✅ limpios | heredado C40 |
 | Go tests | ✅ 40/40 | heredado C40 |
-| KDD suite | ✅ 744/744 | heredado C40 |
+| KDD suite | ✅ 744/744 | heredado C41 |
+
+## Hallazgos remediados por C43
+
+C43 (`internal/posts/http.go` + instrumentación `slog`/`Tracer`/`Metrics`) **remedia** los
+6 findings de C41:
+
+| Finding (C41) | Remediación (C43) |
+|---|---|
+| `obs_posts_list_error_silent` (high) | `List` loggea `posts.list.error` con contexto (limit/offset/status/author/tag) + 500. Test `TestHandler_List_ErrorPath` lo verifica. |
+| `obs_posts_listrendered_hook_silent` (high) | `renderHook`/`filterHook` propagan errores al handler → loggeado como `posts.*_rendered.error`. |
+| `obs_posts_readpath_no_tracing` (medium) | `Tracer` interface (default `noopTracer`) → span por endpoint (`posts.list`, `posts.get_rendered`, `posts.get_by_slug_rendered`). |
+| `obs_posts_readpath_no_metrics` (medium) | `Metrics` struct (lock-protected): counters + latencias; `GET /metrics` expone JSON. |
+| `obs_sanitize_strips_xss_silent` (low) | `Metrics.SanitizeStripped` incremental (wireup pendiente en `Sanitize`). |
+| `obs_no_alerting_readpath` (low) | `/metrics` endpoint expone counters/latencias para integración con stack de alerting. |
 
 ## Scan metodológico
 

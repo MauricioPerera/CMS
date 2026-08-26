@@ -25,6 +25,7 @@ All notable changes to the KDD Template are documented here.
 **Contract 40 — Posts filter por author + tags (migración 002)** ([C40-REPORT](docs/reports/CONTRACT-40-REPORT.md)): migración `002_add_post_authors` (author_id nullable FK + post_tags join) + `ListInput.AuthorID`/`Tag` en `internal/posts/posts.go`. 23/23 posts tests PASS.
 **Contract 41 — Observability scan** ([C41-REPORT](docs/reports/CONTRACT-41-REPORT.md)): scan de gaps de logging/metrics/tracing en el read path posts (`internal/posts`). 6 findings: 2 high criticalPath (error paths List/ListRendered sin logging, hook errors silent), no-tracing, no-metrics, silent-failure Sanitize, no-alerting. `validate_observability_findings.py` PASS.
 **Contract 42 — Race tests read-path (veredicto)** ([C42-REPORT](docs/reports/CONTRACT-42-REPORT.md)): verificación thread-safety bajo `-race`. Hooks QuickJS ✅ 0 data races; posts read path INCONCLUSIVO en Windows (`modernc.org/sqlite` `checkptr` crash en `init`, bug dep). CI linux recomendado.
+**Contract 43 — Posts HTTP REST API + instrumentación** ([C43-REPORT](docs/reports/CONTRACT-43-REPORT.md)): `internal/posts/http.go` con endpoints `List`/`GetRendered`/`GetBySlugRendered`/`Metrics` (stdlib net/http). Remedia C41: slog estructurado, Tracer span, Metrics counters/latencias, ETag/304 cache. 31/31 posts tests PASS.
 
 ## v1.12.0 — 2026-07-26
 
