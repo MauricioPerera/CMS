@@ -1,0 +1,158 @@
+name: validate-contracts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # MODO 1 — Reusable workflow. When another repo calls this via `uses:`,
+  # the `inputs.*` context below is populated (defaults apply too). When THIS
+  # file fires on its native push/pull_request triggers, `inputs.*` is EMPTY,
+  # so every run: that references an input falls back to the literal default
+  # embedded in the `${{ inputs.X || 'literal' }}` expression. That literal
+  # MUST match the value that was hardcoded here before this trigger existed
+  # (see ITEM4-REPORT.md for the equivalence check) — otherwise the KDD repo's
+  # own CI would change behavior on push.
+  workflow_call:
+    inputs:
+      contracts_dir:
+        type: string
+        default: 'knowledge/contracts'
+      specs_dir:
+        type: string
+        default: 'specs'
+      okf_dir:
+        type: string
+        default: 'knowledge'
+      rules_dir:
+        type: string
+        default: 'examples/rules'
+      skills_dirs:
+        type: string
+        # validate_skills.py accepts multiple positional dirs; single input,
+        # space-separated, so the expansion lands as two argv slots.
+        default: 'skills .agents/skills'
+      ux_page_dir:
+        type: string
+        default: 'examples/ux-page'
+      diagrams_dir:
+        type: string
+        default: 'examples/diagrams'
+      security_scan_dir:
+        type: string
+        default: 'security/scan'
+      compliance_scan_dir:
+        type: string
+        default: 'compliance/scan'
+      privacy_scan_dir:
+        type: string
+        default: 'privacy/scan'
+      accessibility_scan_dir:
+        type: string
+        default: 'accessibility/scan'
+      dependency_eol_scan_dir:
+        type: string
+        default: 'dependency-eol/scan'
+      observability_scan_dir:
+        type: string
+        default: 'observability/scan'
+      test_coverage_scan_dir:
+        type: string
+        default: 'test-coverage/scan'
+      src_dir_secrets:
+        type: string
+        default: 'src'
+
+jobs:
+  validate:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js (for the multi-language example contract)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate contracts
+        run: python scripts/validate_contracts.py ${{ inputs.contracts_dir || 'knowledge/contracts' }}
+
+      - name: "Validate specs contracts"
+        run: python scripts/validate_specs.py ${{ inputs.specs_dir || 'specs' }}
+
+      - name: Validate OKF nodes
+        run: python scripts/validate_okf.py ${{ inputs.okf_dir || 'knowledge' }}
+
+      - name: Lint ASCII scripts
+        run: python scripts/lint_ascii.py scripts
+
+      - name: Validate rule contracts
+        run: python scripts/validate_rules.py ${{ inputs.rules_dir || 'examples/rules' }}
+
+      - name: Validate agent skills
+        run: python scripts/validate_skills.py ${{ inputs.skills_dirs || 'skills .agents/skills' }}
+
+      - name: Validate changelog coherence
+        run: python scripts/validate_changelog.py
+
+      - name: Validate UX/accessibility (HTML pages)
+        run: python scripts/validate_ux_page.py ${{ inputs.ux_page_dir || 'examples/ux-page' }}
+
+      - name: Validate Mermaid diagrams (flowchart)
+        run: python scripts/validate_diagrams.py ${{ inputs.diagrams_dir || 'examples/diagrams' }}
+
+      - name: Validate security findings (Capa 3, vendored codex-security)
+        run: python scripts/validate_security_findings.py ${{ inputs.security_scan_dir || 'security/scan' }}
+
+      - name: Validate compliance/license findings (Capa 3)
+        run: python scripts/validate_compliance_findings.py ${{ inputs.compliance_scan_dir || 'compliance/scan' }}
+
+      - name: Validate privacy/PII findings (Capa 3)
+        run: python scripts/validate_privacy_findings.py ${{ inputs.privacy_scan_dir || 'privacy/scan' }}
+
+      - name: Validate accessibility findings (Capa 3)
+        run: python scripts/validate_accessibility_findings.py ${{ inputs.accessibility_scan_dir || 'accessibility/scan' }}
+
+      - name: Validate dependency EOL findings (Capa 3)
+        run: python scripts/validate_dependency_eol_findings.py ${{ inputs.dependency_eol_scan_dir || 'dependency-eol/scan' }}
+
+      - name: Validate observability findings (Capa 3)
+        run: python scripts/validate_observability_findings.py ${{ inputs.observability_scan_dir || 'observability/scan' }}
+
+      - name: Validate test-coverage findings (Capa 3)
+        run: python scripts/validate_test_coverage_findings.py ${{ inputs.test_coverage_scan_dir || 'test-coverage/scan' }}
+
+      - name: Run each contract's test_command
+        run: python scripts/validate_test_commands.py ${{ inputs.contracts_dir || 'knowledge/contracts' }} .
+
+      - name: Scan for leaked secrets (src only — see knowledge/contracts/secret-scan-gate.md)
+        run: python scripts/scan_secrets.py ${{ inputs.src_dir_secrets || 'src' }}
+
+      # The suite runs twice on purpose (identical command): the second run
+      # detects flaky tests / verifies determinism. See specs/CONTRACT-11-ci-windows-suite2x.md.
+      - name: Run unit tests (1/2)
+        run: python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Run unit tests (2/2)
+        run: python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Run project test suite
+        # This step is separate from the two above on purpose: those validate the KDD
+        # tooling itself (scripts/*.py) and stay Python forever, regardless of your
+        # project's language. THIS step is a placeholder for YOUR project's own tests.
+        # Swap the command below for your language's runner (e.g. `npm test`,
+        # `cargo test`, `go test ./...`) once your project has its own tests; add
+        # `actions/setup-node`/`actions/setup-go`/etc. above if your runtime needs setup.
+        # Left as a no-op echo by default so a clean fork of the template stays green
+        # without editing anything and the Python suite is not run a third time.
+        run: echo "No project-specific test runner configured yet. Replace this step's command with your language's test runner (e.g. npm test, cargo test, go test ./...) once your project has its own tests."
+
+      - name: Assemble context (smoke)
+        run: python scripts/assemble_context.py ccdd/context.json "smoke"

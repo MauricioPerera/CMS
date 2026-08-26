@@ -1,0 +1,435 @@
+# Changelog
+
+All notable changes to the KDD Template are documented here.
+
+## Unreleased
+
+_Sin cambios pendientes._
+
+## v1.12.0 — 2026-07-26
+
+**Tres campos del contrato que se declaraban y no se verificaban.** Esta release sale de
+instanciar la plantilla en un proyecto Rust real y encontrar, tirando del mismo hilo tres veces,
+que el `budget`, el `forbids` y el escaneo de secretos **decian** cubrir algo que no cubrian —
+y que en los tres casos el fallo era el mismo: **verde silencioso**, no un error visible. Ninguno
+era detectable sin leer el codigo del gate. El tema comun queda escrito porque es la leccion, no
+la anecdota: un gate que no puede reportar su propia ausencia de cobertura no es un gate, es una
+sensacion de cobertura.
+
+**El gate de secretos era un no-op completo en proyectos no-Python.** Tercer caso de la misma
+clase (despues del `budget` y del `forbids`), y el mas grave porque es **seguridad y corre en
+CI**: `scan_secrets.py` escaneaba solo `('.py','.js','.ts','.md','.json')`, asi que en un
+proyecto Rust/Go/Java/C# **miraba CERO archivos y salia 0**. Verde, sin haber leido nada.
+
+- **Demostrado, no supuesto**: la MISMA clave `AKIAIOSFODNN7EXAMPLE` en un `.py` daba
+  `ERROR [AWS_KEY]` + exit 1; en un `.rs`, exit 0 silencioso.
+- **El oraculo congelado certificaba el agujero.** `test_custom_extensions` asertaba literalmente
+  que un `.rs` con una credencial devolvia `[]`. Leccion sobre oraculos: congelan el
+  comportamiento que TENIAS, incluido el que esta mal — `audit_seals` detecta seals debiles, no
+  seals equivocados.
+- `DEFAULT_EXTENSIONS` ahora es una constante introspectable que cubre los lenguajes con backend
+  en el gate (`.rs`, `.go`, `.java`, `.cs`, `.php`, `.rb`, `.kt`, `.c`/`.cpp`, `.swift`, `.ts`,
+  `.py`...) mas config y scripts donde las credenciales viven igual de seguido (`.toml`,
+  `.yaml`, `.env`, `.sh`, `.tf`, `.sql`...).
+- **Ampliar la lista no alcanzaba**: la proxima extension ausente reproduce el bug en silencio.
+  Nuevo `SECRETS_NO_FILES_SCANNED` (WARNING): si un directorio TIENE archivos y ninguno matchea,
+  el gate lo dice. No rompe el build — avisa que no miro nada, no que haya un secreto. `main`
+  pasa a respetar el `level` del finding y solo cuenta ERRORs para el exit code.
+- Regresion cubierta en el oraculo: un secreto identico plantado en 14 extensiones
+  (`.rs`, `.go`, `.java`, `.cs`, `.rb`, `.kt`, `.swift`, `.c`, `.cpp`, `.php`, `.toml`, `.yaml`,
+  `.env`, `.sh`) debe detectarse en todas. Suite 692 -> 696; `tests/test_scan_secrets.py`
+  re-sellado (cambio legitimo del oraculo, visible en el diff del sello).
+- `rule_hints` gana la receta de `SECRETS_NO_FILES_SCANNED`; conteo **106 -> 107** rule-ids.
+
+**El `forbids` que declarabas tampoco estaba impedido** — segundo campo del contrato que resulta
+decorativo, hallado tirando del mismo hilo que el `budget`. `tc_lint` solo avisa si `forbids`
+esta vacio; **nadie verificaba su contenido**. Un contrato podia declarar `forbids: ['unsafe']`
+sobre un proyecto Rust que permite `unsafe` sin que ningun gate lo notara. Hallazgo real: el
+propio proyecto de prueba de esta plantilla lo declaraba sin imponerlo.
+
+**Nuevo auditor `scripts/audit_forbids.py`** (advisory opt-in, contrato `forbids-audit`)
+- Compara el `forbids` DECLARADO contra lo que esta efectivamente impedido. **Un solo
+  verificador: `unsafe` en Rust**, elegido porque es el unico donde la prohibicion es
+  comprobable de verdad — rustc la impone sobre el **crate entero**, no sobre un archivo. Acepta
+  las tres vias equivalentes: `#![forbid|deny(unsafe_code)]` en la raiz del crate,
+  `unsafe_code = "deny"|"forbid"` bajo `[lints.rust]`, o herencia del workspace
+  (`[lints] workspace = true` + `[workspace.lints.rust]`).
+- Con la denegacion presente **no reporta nada aunque el target use `unsafe`**: rustc rechaza la
+  compilacion, o sea que el fallo de build ES el enforcement.
+- 3 reglas: `FORBID_UNSAFE_PRESENT` (dura: declarada y violada, sin denegacion),
+  `FORBID_UNSAFE_UNENFORCED` (declarada pero nada la impone a nivel compilador — hoy el target
+  no la viola, manana si) y `FORBID_UNVERIFIED`.
+- **`FORBID_UNVERIFIED` es el punto, no un relleno**: `network` / `subprocess` / `llm` siguen
+  siendo declarativos y el auditor **lo dice en vez de callar**, asi que un `forbids` en limpio
+  deja de significar "todo verificado" y pasa a significar "esto verificado, esto todavia no".
+  Nunca cambia el exit code, ni con `--strict`: es una limitacion del auditor, no un
+  incumplimiento del contrato.
+- Sin `--strict` SIEMPRE exit 0; con `--strict`, exit 1 solo por reglas duras. **NO es un gate de
+  Nivel 1**: el conteo no cambia (11 gates, preflight 12/12) y deliberadamente NO entra en
+  `GATE_SPECS` — eso rompería el oraculo congelado del preflight, y promoverlo seria su propio
+  contrato con ambos oraculos re-sellados (misma politica que fijo `audit_seals` en v1.10.0).
+- No usa `tomllib` a proposito: fijaria un piso de Python 3.11 en una plantilla que se
+  distribuye a terceros. Parser de secciones minimo, mismo criterio que el mini-YAML de
+  `validate_contracts`.
+- Oraculo congelado `tests/test_audit_forbids.py` (31 tests, sellado, fixtures solo en tmpdir).
+  Suite 661 -> 692. `audit_seals` sobre el oraculo nuevo: 0 findings.
+- `rule_hints` gana las 3 recetas y `audit_forbids.py` entra en `_EMITTERS` del test de
+  cobertura bidireccional; el conteo pasa de **103 a 106** rule-ids en los 5 lugares que lo
+  citan. Ese cambio toca `tests/test_rule_hints.py`, oraculo del contrato `rule-hints`, asi que
+  su `tests_sha256` se **re-sella** — el gate lo detecto (`FM_TESTS_FROZEN`) y el diff del sello
+  deja el cambio visible en review, que es exactamente para lo que existe.
+
+**El tope que declarabas no era el que se aplicaba.** El gate de Nivel 2 (`GLOBAL_MAX` de
+`tc_lint.py`) lee `cyclomatic_max` / `nesting_max` / `lines_max` / `params_max`. La plantilla
+documentaba, y **los 33 contratos de este repo usaban**, `max_cyclomatic_complexity` /
+`max_nesting_depth` — nombres que el gate **nunca leyo**. `validate_contracts.py` solo
+verificaba que `budget` *existiera*, no los nombres de sus subclaves, asi que el tope declarado
+se descartaba, el gate caia a su config firmada y nadie lo notaba.
+
+**Subclaves de `budget` verificadas por nombre** (`FM_BUDGET_KEY` / `FM_BUDGET_VALUE`)
+- **Evidencia del fallo, no sospecha**: un contrato con `max_params: 1` y una firma de **5
+  parametros** pasaba `lint_task_contract` con **cero errores de budget**. Con el nombre
+  canonico (`params_max: 3`) el mismo gate si reporta el exceso. La promesa central de CCDD
+  —umbrales deterministas— no se cumplia, y no era detectable sin leer el codigo del gate.
+- `validate_contracts.py` gana `BUDGET_KEYS` (las canonicas) y `BUDGET_LEGACY_ALIASES`
+  (historica -> canonica, para que el error diga **que** renombrar, no solo que esta mal), mas
+  el helper `_is_positive_int` (el parser mini-YAML no convierte tipos: `5` llega como `'5'`;
+  rechaza bool, cero, negativos y no-numericos).
+- **Los 33 contratos + la plantilla** migrados a los nombres canonicos (rename acotado a claves
+  indentadas del frontmatter, verificado que no toca prosa).
+- `glosario.md`: los nombres estaban mal y afirmaba que Nivel 1 "solo checkea que esten
+  presentes" — ya no es cierto para los NOMBRES (los VALORES siguen siendo informativos en
+  Nivel 1; los topes los enforce Nivel 2, sin cambios en la precedencia).
+- `rule_hints.py`: recetas de los dos rule-ids nuevos, y el conteo pasa de **101 a 103**
+  rule-ids en los 5 lugares que lo citaban (`.agents/AGENTS.md`, la skill local,
+  `rule-hints.md`, `glosario.md`, `README.md`).
+- **Trade-off aceptado**, mismo patron que `tests_sha256`: en proyectos ya instanciados desde la
+  plantilla, los contratos con los nombres viejos pasan a ERROR al actualizar el validador — el
+  mensaje de error nombra exactamente el reemplazo.
+
+## v1.11.1 — 2026-07-26
+
+**Patch de documentacion**: sin cambios de codigo, ningun contrato ni oraculo tocado, ninguna
+capacidad nueva. Escribe una regla que el repo ya aplicaba de hecho a tres herramientas sin
+enunciarla en ninguna parte.
+
+**El criterio de que entra como tool MCP, enunciado** (cierra #40)
+- `knowledge/mcp-server.md` gana la seccion "Que entra como tool y que no": **por MCP viajan
+  veredictos y utilidades; los diagnosticos se corren en local**, con la tabla de las 15 tools
+  expuestas frente a los tres diagnosticos que no lo estan (`preflight`, `audit_seals`,
+  `benchmark_gates`).
+- La regla **ya se aplicaba a las tres herramientas sin estar escrita**: hasta ahora la
+  ausencia de cada una se explicaba caso por caso, asi que decidir si una tool nueva entraba
+  exigia recordar tres precedentes dispersos. Ahora se decide leyendo una linea.
+- Las tres razones estan verificadas, no son simetria: un advisory sale **exit 0 aunque haya
+  findings** (un cliente remoto no puede distinguir sano de roto sin interpretar el payload);
+  los diagnosticos se usan en momentos donde ya hay shell abierta; y operan sobre el arbol
+  local, que un cliente remoto no tiene delante. El contraste que da sentido a la regla:
+  `rule_hint` si se expone porque es una **consulta pura** que responde a un veredicto
+  recibido por el mismo canal.
+- Queda escrito ademas **como romperla**: si `audit_seals` gana un modo con veredicto real, se
+  expone y se documenta por que deja de ser un diagnostico.
+
+## v1.11.0 — 2026-07-26
+
+**La receta de arreglo llega al canal donde vive el agente.** `v1.10.0` trajo `rule_hints` —
+el mapa de los 101 rule-ids a su receta — pero solo por shell, asi que un agente conectado por
+MCP tenia que cambiar de canal justo cuando mas contexto necesitaba. Esta release cierra ese
+ultimo tramo con la tool `rule_hint`, y de paso documenta por que `audit_seals` **no** se
+expone (decision, no olvido).
+
+**`rule_hint`: la receta de arreglo se pide por MCP, no solo por shell** (cierra #35)
+- `scripts/mcp_server.py` expone `rule_hint(rule_id) -> {rule_id, hint, known}`. Es el
+  complemento natural de un veredicto en rojo: un agente que recibe `FM_TESTS_FROZEN` de
+  `validate_contracts` pide el arreglo **sin salir del protocolo**. Antes la receta solo
+  existia por shell (`python scripts/rule_hints.py <CODE>`), lo que obligaba a un agente MCP a
+  cambiar de canal justo cuando mas contexto necesitaba.
+- Un `rule_id` desconocido **no es un error de tool**: devuelve el fallback con
+  `known: false`. Preguntar de mas debe orientar, no abortar.
+- **No pasa por `mcp_gate_dispatch`** (unica tool que no lo hace): no es un gate y no corre
+  subprocess, asi que llama directo a `rule_hints.hint_for`, que es stdlib pura. Por lo mismo
+  **no entra en `GATE_SPECS`** — meterla ahi la sumaria a `LEVEL1_GATES` y romperia el oraculo
+  congelado del preflight (12 gates exactos). El conteo de gates no cambia: Nivel 1 sigue en 11.
+- **Oraculo primero, esta vez en el orden correcto**: los 3 tests del smoke (conjunto de tools,
+  llamada end-to-end por el protocolo MCP real, y el fallback del id desconocido) se escribieron
+  y se vieron **fallar** (`Unknown tool: rule_hint`) antes de tocar el server. Suite 621 -> **623**.
+- `knowledge/mcp-server.md`: 14 -> **15 tools**, con la entrada de `rule_hint` y la nota de por
+  que no pasa por el dispatcher. De paso queda documentado por que **`audit_seals` no se
+  expone** (es un auditor advisory sobre el repo local, no un veredicto accionable en remoto) —
+  la mitad de #36 que era una decision, no una ausencia por olvido.
+
+_El wiring MCP sigue sin task contract, como esta declarado en su docstring: depende del
+paquete externo `mcp`, fuera de la convencion `deps_allowed: []` del resto del repo. La logica
+pura que si tiene contrato+oraculo sellado es `mcp_gate_dispatch.py`._
+
+## v1.10.0 — 2026-07-26
+
+**Recetas de arreglo por rule-id: los gates dejan de decir solo QUE fallo**
+- `scripts/rule_hints.py` (nuevo): mapa `rule-id -> receta accionable` para los **101**
+  codigos que emiten los 13 validadores. Los gates decian *que* fallo (`clave requerida
+  ausente: type`) pero no *que hacer*; un humano lo deduce leyendo el nodo OKF, un agente
+  efimero itera a ciegas. Usable como CLI (`rule_hints.py <CODE>`, `--all`, `--json`) y como
+  dato (`hint_for`, `enrich`). Stdlib pura, ASCII, sin red ni LLM.
+- `preflight.py --agent`: cada gate en rojo arrastra la receta de los rule-ids que reporto.
+  El flag no cambia veredicto ni exit code, solo enriquece. Los codigos se leen de la salida
+  del propio validador, anclados al formato `<NIVEL> [CODE] archivo: msg`, asi que ningun
+  gate necesita cooperar para participar. `validate_test_commands` queda excluido a
+  proposito: no emite findings propios, reenvia los de la suite que ejecuta, y enriquecerlos
+  daria recetas para problemas que no existen en el repo.
+- `tests/test_rule_hints.py` (nuevo, 6 tests): la cobertura se gatea en **las dos
+  direcciones** — todo rule-id emitido debe tener receta, y ninguna receta puede documentar
+  un codigo que ningun validador emite. Sin ese gate el mapa envejece en silencio, que es
+  justo lo que venia a evitar. Suite 615 -> **621**.
+- El gate inverso ya pago: destapo que el extractor perdia codigos reales por dos vias — los
+  que se emiten embebidos en el `print` (`ERROR [CONFIG_MISSING]: ...`, 3 codigos de
+  `validate_commit_message`) y los que no llevan guion bajo (`INDEX`, `LINK`, `ORPHAN`,
+  `TAGS`, `TYPE` de `validate_okf`; `JSON` de `validate_rules`). Los 9 estan cubiertos.
+- Documentado en el nodo canonico [`knowledge/validacion.md`](knowledge/validacion.md)
+  (seccion nueva + el flag en Preflight), no duplicado en el README (OKF §4).
+- Linaje: es el analogo de `tools/rule-hints.js` de
+  [game-protocol](https://github.com/MauricioPerera/game-protocol), el proyecto hermano,
+  donde cada hallazgo del linter viaja con su arreglo. Cierra el viaje de vuelta: las
+  familias declarativas de este repo salieron de alli, y los hints hacen el camino inverso.
+
+**La superficie agent-facing aprende la herramienta nueva (misma clase de drift que v1.6.0 y v1.9.0)**
+- Auditoria previa al release: **8 superficies documentaban `preflight` y `audit_seals` pero
+  ninguna mencionaba `rule_hints`** — solo el nodo canonico. La capacidad existia, testeada y
+  en `main`, pero un agente que clonara el template no se enteraba de que existe, que es
+  exactamente el problema que la herramienta venia a resolver. Es la tercera vez que este
+  repo corrige esta clase de drift; la primera en que se detecta ANTES de publicar.
+- Cerradas: `.agents/AGENTS.md` (la fuente unica que leen Cursor/Copilot/Cline/Windsurf via
+  sus punteros) y la skill `kdd-okf-ccdd-hybrid` pasan de "dos herramientas de diagnostico" a
+  tres, con el CUANDO usar cada una; `README.md` la suma a la lista de scripts que se
+  conservan al instanciar para un proyecto no-Python (EN/ES/PT) y a la lista de diagnosticos;
+  `knowledge/glosario.md` gana la entrada "Receta de arreglo"; `knowledge/quickstart.md`
+  documenta `--agent` en el punto del flujo donde hace falta; `knowledge/supervision-humana.md`
+  gana el checklist 7, con el uso doble: arreglarlo vos, o juzgar si el arreglo de un agente
+  ataco la causa real.
+
+**Contrato retroactivo: `rule_hints` era la unica herramienta del repo sin task contract**
+- El indice OKF no enlaza herramientas, enlaza sus **task contracts**: `preflight`,
+  `seal-audit`, `test-command-gate` y `secret-scan-gate` tienen el suyo, con oraculo sellado.
+  `rule_hints` no. Un template que impone "el oraculo se escribe y se sella ANTES de
+  implementar" y cuya herramienta mas nueva no tiene contrato es incoherente consigo mismo,
+  y se nota justo donde mas duele: en el indice que lee un agente al llegar.
+- `knowledge/contracts/rule-hints.md` (nuevo) congela el oraculo ya existente
+  (`tests_sha256` sobre `tests/test_rule_hints.py`), declara `touch_only`, `budget`
+  (ciclomatica <= 12, anidamiento <= 3; medidos 10 y 2) y `forbids`, y documenta la frontera
+  en Do/Don't. Enlazado desde `knowledge/index.md`. 31 -> **32 contratos**, 58 -> **59 nodos
+  OKF**, `audit_seals` 0 findings.
+- **Se redacto DESPUES de implementar, y el propio contrato lo dice en su encabezado.** Un
+  contrato a posteriori documenta la frontera y congela el oraculo hacia adelante, pero NO
+  demuestra que el oraculo precedio al codigo: esa garantia, para esta herramienta, no
+  existe. Se deja escrito en vez de disimularlo.
+
+## v1.9.0 — 2026-07-17
+
+**Robustness audit of the new tools: 7 confirmed findings, all fixed (AUDIT-05/06)**
+- A two-lens delegated audit (contract↔code↔docs divergence; fresh-adopter experience) plus the orchestrator's own instantiation scenario (`init_project --apply` on a throwaway copy → `preflight` 12/12, `audit_seals` 0 findings — the v1.6.0 `scan_secrets` bug class did not recur). Every finding was adversarially reproduced by the orchestrator before acting; zero invented findings, and both auditors correctly declined the known non-findings (the historical "28 contratos", the unenforced index).
+- Three uncaught-exception bugs fixed, each violating its own contract's "never raises" invariant: `mcp_gate_dispatch.run_gate` raised `NotADirectoryError`/`FileNotFoundError` when `repo_root` (the subprocess cwd) was invalid — the existing oracle covered a bad param dir but not a bad cwd; `preflight`'s seal check and `audit_seals` raised `UnicodeDecodeError` on a non-UTF-8 tests file (the same `ValueError`-not-`OSError` class v1.7.0 fixed in `lint_ascii`) — now a clean FAIL row and a `WEAK_TESTS_UNPARSEABLE` finding respectively, with a non-UTF-8 contract skipped as non-auditable. Plus one silent-wrong-behavior fix: `preflight --contract=NAME` (the `=` form) was ignored and silently ran full mode; both flag forms now work.
+- Discipline: the orchestrator extended the three frozen oracles FIRST (+6 tests freezing the fixed behavior), re-sealed all three contracts, then delegated the code fixes to an ephemeral GLM dev against the already-red oracles — green on first attempt. Suite grows 609 → 615 (two identical runs).
+- Doc drift from the same audit: `validacion.md` still described the diagram gate as flowchart-only (4 types since v1.6.0) and the benchmark as measuring 9 gates (11 since v1.7.0); `mcp-server.md`'s "the other 13 contracts" count replaced with a count-free phrasing so it can't go stale again.
+
+**Agent-facing docs learn about the diagnostic tools**
+- `.agents/AGENTS.md` (the single source of truth every agent-tool bridge points to) and the `kdd-okf-ccdd-hybrid` skill now document the two opt-in diagnostics with WHEN to use each: `preflight.py` before delegating or starting work, `audit_seals.py` when authoring or reviewing an oracle before sealing it — both explicitly NOT gates (Level 1 stays at 11). Same drift class v1.6.0 fixed for the gate summaries: a stale agent-facing picture reaches every non-Claude agent too. `knowledge/supervision-humana.md` gains a checklist point separating oracle INTEGRITY (the hash, machine-checked) from oracle STRENGTH (`audit_seals`, then human judgment/mutation testing); `knowledge/quickstart.md` adds the audit step right after sealing; `knowledge/glosario.md` gains the `preflight` and `seal debil` entries pointing to their normative nodes.
+
+**Contract 33 — Weak-seal auditor: the seal guarantees integrity, not strength** ([C33-REPORT](docs/reports/CONTRACT-33-REPORT.md))
+- New `scripts/audit_seals.py`: ADVISORY auditor closing the deferred half of the same external feedback that produced C32 ("help catch weak test seals early"). A sealed oracle (`tests_sha256`) is guaranteed unchanged — not guaranteed able to fail: an empty tests file, one with no real asserts (`assert True` doesn't count), no test functions, or one that never references its target passes `validate_contracts` green while sealing nothing. Six rules (`WEAK_TESTS_MISSING/EMPTY/UNPARSEABLE/NO_TEST_FUNCTIONS/NO_ASSERTS/TARGET_UNREFERENCED`), detected via `ast` (stdlib, read-only, `forbids` includes `subprocess` — stricter than the preflight). Judging the QUALITY of an existing assert is explicitly out of scope: that's mutation testing's job.
+- Advisory by design — the repo's mechanical/judgment boundary applied to itself: detecting ABSENCE is mechanical (the tool), deciding it's unacceptable is the team's call (`--strict` opt-in: exit 1 on findings; default always exit 0). NOT a new Level-1 gate, NOT in CI, and deliberately NOT added to `mcp_gate_dispatch.GATE_SPECS` — that would grow `LEVEL1_GATES` and break the preflight's frozen oracle (exactly 12 gates); promoting it someday is its own contract with both oracles explicitly re-sealed.
+- The design's key finding came from prototyping the heuristics against the live repo BEFORE freezing the oracle: 2 apparent hits turned out to be legitimate self-referential coherence contracts (`target == tests` — the tests file IS the deliverable, e.g. `agents-context-rule`), so the omission rule was frozen into the oracle rather than discovered later as a red dogfood. Non-Python tests (the `example-node-greet` JS oracle) get the text-level checks only. Live baseline: **0 findings / 31 contracts audited** — including auditing its own contract.
+- Frozen oracle `tests/test_audit_seals.py` (15 tests, sealed, tmpdir fixtures only). Delegated pipeline again: two ephemeral GLM devs in parallel (code / docs), disjoint perimeters, both green on first attempt, zero re-delegations. Suite grows 594 → 609 (two identical green runs); all 12 gates green locally; `preflight.py --contract seal-audit` 3/3.
+
+## v1.8.0 — 2026-07-17
+
+**Contract 32 — Preflight: a local dry-run of all 12 gates, born from external adoption feedback** ([C32-REPORT](docs/reports/CONTRACT-32-REPORT.md))
+- New `scripts/preflight.py`: zero-dependency CLI (stdlib + sibling modules, no `mcp` SDK) answering a verbatim external request — "a built-in dry-run mode that shows which of the 12 gates would fail on the current contract before any agent touches the code". The engine already existed (`mcp_gate_dispatch.run_all_level1`, v1.6.0) but was only reachable through the MCP server; this is its CLI mouth. Full mode runs all 12 gates (the 11 Level-1 gates + `validate_attestation` — the local-only gate CI never sees, making the preflight the one place all 12 run together), one PASS/FAIL/TIMEOUT line per gate plus an `N/12` summary, exit 0/1, reporting every gate even after the first failure (it's a diagnostic, not a short-circuit). `--contract <name>` mode runs 3 scoped checks on a single task contract — `frontmatter`, `seal` (bit-compatible with `validate_contracts.py --hash`, LF-normalized), `test_command` (same `shlex` dialect as `validate_test_commands`, `posix=False` on Windows, 120s timeout) — catching a desynchronized seal earlier than the gate would.
+- Deliberately NOT a new Level-1 gate: same opt-in status as `benchmark_gates.py` — not wired into CI (CI already runs each gate as its own step), not added to `benchmark_gates.py`'s frozen `GATES` tuple, and `knowledge/validacion.md` still counts 11 Level-1 gates. The "weak test seals" half of the feedback is explicitly deferred (oracle-quality heuristics deserve their own contract; rationale in the spec).
+- `ALL_GATES` is derived from the dispatch (`LEVEL1_GATES` + `validate_attestation`), never a second hardcoded list; frontmatter parsing reuses `validate_contracts.parse_frontmatter`. Frozen oracle `tests/test_preflight.py` (14 tests, sealed) authored by the orchestrator BEFORE delegation and designed to never run real gates (fake injected runner + tmpdir fixtures — respecting the `run_all_level1` recursion warning in `knowledge/mcp-server.md`, and keeping the contract's own `test_command` under `validate_test_commands`' 120s CI timeout). Docs: quickstart step, `validacion.md` section, `mcp-server.md` CLI-vs-MCP cross-ref, index entry, README one-liner.
+- Process note: implemented via the delegated pipeline (two ephemeral GLM devs in parallel with disjoint file perimeters, both green on first attempt, zero re-delegations); dogfooded live on this very repo (`12/12` full mode, `3/3` contract mode). Suite grows 580 → 594 (two identical green runs).
+
+## v1.7.0 — 2026-07-16
+
+**DEFINIR: a step before PLAN, for when the project itself isn't decided yet**
+- `metodologia-ejecucion.md`'s process starts at PLAN, which assumes a clear "pedido" (request) convertible into atomic tasks already exists. New optional step DEFINIR, documented right before PLAN: for when the project isn't chosen yet, or its shape (architecture, scope, stack) hasn't closed — a real gap found first-hand while starting KDD's own first non-toy case study (a project built with KDD, not about KDD).
+- New skill `.agents/skills/kdd-definir/SKILL.md`: process + hard rules for an agent running this step in conversation with a human (never invent the project, never assume an architecture/stack decision with real tradeoffs without asking, one genuine decision at a time, close by synthesizing exactly what was discussed into `DEFINITION.md` — nothing new added at close time).
+- New `TEMPLATE-DEFINITION.md` at the repo root: fixed structure (what it is, architecture if applicable, target capabilities unphased, real motivation, explicit out-of-scope). `DEFINITION.md` is deliberately NOT an OKF node and no gate validates it — it's pre-contract documentation; PLAN takes over once it closes.
+
+**Audit closure: validator robustness and doc drift**
+- `init_project --apply` is now truly all-or-nothing: the pre-deletion check also covers `knowledge/index.md` and `README.md`, which `apply` reads after the deletion loop (`_rewrite_index`/`_rename_readme`) via a new `REQUIRED_AFTER_DELETE` tuple. Previously the check guarded only `MANIFEST`, so a missing index/README could let the loop delete the manifest files and then crash with `FileNotFoundError`, leaving a half-instantiated repo — the all-or-nothing guarantee the docstring promised didn't actually hold.
+- `validate_commit_message.py` no longer tracebacks on a structurally invalid config: a config that isn't a JSON object, or that omits `types`/`max_subject_length` (which the checker indexes directly), now reports `CONFIG_INVALID` + exit 1 instead of a `KeyError`/`TypeError` traceback — invalid input is a finding, not a crash.
+- CRLF-safe parsing: `validate_test_commands._frontmatter` and `validate_attestation.parse_envelope` now normalize CRLF/CR to LF before matching the `---` delimiters, so a contract/report saved with Windows line endings parses identically to LF — matching the `splitlines()` dialect `validate_contracts` already used. A CRLF contract previously read as having no frontmatter (silent skip) or a malformed envelope.
+- Non-UTF-8 tolerance: `lint_ascii.py` catches `UnicodeDecodeError` (a `ValueError`, not caught by its `except OSError`) and reports it as a per-file finding instead of crashing the gate — a non-UTF-8 file is by definition non-ASCII-conformant. `validate_test_commands.collect_contracts` skips a contract that fails I/O or UTF-8 decode instead of aborting the whole gate.
+- The `matches` and `each` rule families are now documented in their contracts: `validate-rules.md` describes `matches` (`{field, pattern}`, `re.search`, anchor with `^...$` for a full match; absent/`None` and non-strings skip — `required`/`type`'s job) and notes `matches` inside `each`'s subset; `rules-gate.md`'s `FAMILIA` lists all 9 families (`required/type/enums/bounds/refs/keyed_bounds/keyed_enums/each/matches`) instead of 7; `route-message.md`'s docstring clarifies it never throws on a malformed `message` (assumes a well-formed `routing`). The families already existed in the engine; only the contracts had drifted.
+- `benchmark_gates.py` is aligned with the real Level-1 set: its `GATES` tuple now lists all 11 gates (added `validate_test_commands` and `scan_secrets`), matching `knowledge/validacion.md` and `mcp_gate_dispatch.LEVEL1_GATES` (every CI gate except local-only `validate_attestation`). It previously measured only 9 — `validate_test_commands` and `scan_secrets` were missing (AUDIT-01 H-5). `benchmark-gates.md` updated 9→11 and its oracle re-sealed.
+- Doc drift fixed: 5 broken in-page anchors and 2 broken relative links — the `casos-reales.md` anchors referenced from `metodologia-ejecucion.md` (renamed sections) and the `../contracts/check-graph.md` / `../architecture/...` links in `specs/CONTRACT-22` and `OKF-SPEC.md` corrected to their real targets.
+- `validate_changelog.py` is now documented as intentionally excluded from the composite action (`.github/actions/validate-contracts/action.yml`): CHANGELOG↔`docs/reports/CONTRACT-NN` coherence is structure specific to the KDD template, not a caller's — same reasoning as `lint_ascii`.
+- `.github/workflows/validate.yml` gained a comment on the duplicated `python -m unittest discover` step: the suite runs twice on purpose (the second run detects flaky tests / verifies determinism — see CONTRACT-11), so a future maintainer doesn't "fix" the apparent duplication.
+- README consistency: a single `reemplazá`→`reemplaza` (voseo→tuteo) fix in the "Se adapta" section, so the README's tone is internally consistent.
+- All 16 confirmed findings came from a delegated audit (4 GLM devs, reports AUDIT-01..04); the oracles of every contract whose frozen tests changed were re-sealed (`tests_sha256` in attestation, commit-message, init-project, lint-ascii, test-command, rules, and benchmark gates). Verified: full CI gate chain green + the suite (580 tests) OK in two identical runs.
+
+## v1.6.0 — 2026-07-14
+
+**MCP server: the gates are now tools, not just CLI scripts**
+- New `scripts/mcp_gate_dispatch.py` (has a task contract + frozen oracle like any other gate, `deps_allowed: []`): pure dispatch logic mapping each of the 12 gates to its script and argv, executed via `subprocess.run`. New `scripts/mcp_server.py` (thin wiring over it, using the official `mcp` SDK's `FastMCP` -- NOT governed by a task contract, since it depends on an external package that breaks this repo's `deps_allowed: []` convention on every other contract): exposes 14 tools over stdio -- one per gate, plus `run_all_level1` (single-call Level-1 verdict) and `seal_tests` (hash-sealing without touching the CLI). `pip install mcp && python scripts/mcp_server.py`; see `knowledge/mcp-server.md` for the `.mcp.json` registration snippet. Opt-in tooling, not wired into CI.
+- Found and fixed a real recursive-explosion bug while building this: a test that calls `run_all_level1` (which runs `validate_test_commands`, which runs every contract's `test_command`, including `init-project.md`'s own test that copies the whole repo and re-runs `python -m unittest discover` inside that copy) against the live repo, if that test itself lives inside the suite being discovered, re-triggers the same cycle recursively. Fixed by never calling `run_all_level1` against the live repo from within its own test suite (isolated tmpdir fixtures instead) and documented explicitly in both `knowledge/contracts/mcp-gate-dispatch.md` and `knowledge/mcp-server.md` so it isn't reintroduced.
+- Separately found and fixed a narrower ambient-state bug: two tests asserted `validate_contracts` succeeds against "whichever repo is running the suite," which is false specifically inside `test_init_project.py`'s post-apply copy (it deletes `tests/test_init_project.py` as its own anti-recursion guard, which breaks `init-project.md`'s `tests:` field reference). Switched those two tests to `lint_ascii` (doesn't depend on that file) instead of weakening the assertion.
+
+**Attestation gate: seal the `verified` step of the contract lifecycle with hashes, not prose**
+- New local-only gate `scripts/validate_attestation.py` (does NOT run in CI — same reasoning as `validate_perimeter.py`: the evidence it audits, `.agents/logs/`, is gitignored and a CI runner never sees it). Verifies an optional mini-YAML envelope at the top of each `.agents/logs/<task>-REPORT.md`: identity (`agent`, `model`), the exact `command` + `exit_code`, and two recomputable hashes — `output_sha256` over the pasted output itself, `contract_sha256` over `knowledge/contracts/<task>.md` as it stood at verification time. Before this, `por-que-kdd.md`'s "sealed by hash" differentiator stopped one step short: the `verified` lifecycle stage was prose pasted by a human, with no way to detect tampering or bind the evidence to a specific contract revision.
+- Reports without an envelope get a `WARNING` (`ENVELOPE_MISSING`), not an `ERROR` — verified against this repo's own 28 real (gitignored, untracked) local reports, all pre-dating this gate: all pass as warnings, none block. A malformed or hash-mismatched envelope is a real `ERROR`.
+- New `.agents/logs/TEMPLATE-REPORT.md`, distributed despite the directory being gitignored: `.gitignore`'s blanket `.agents/logs/` rule was narrowed to `.agents/logs/*` with an explicit `!.agents/logs/TEMPLATE-REPORT.md` negation (a negation cannot un-ignore a file inside a wholesale-ignored directory, only inside a glob-ignored one) — same pattern as `docs/reports/TEMPLATE-REPORT.md`. Verified: `git add -n .agents/logs/` stages only the template, none of the real local reports.
+
+**Distribute the gates as a reusable GitHub Action, without cloning the whole template**
+- `.github/workflows/validate.yml` gained a `workflow_call` trigger with one string input per path it uses (`contracts_dir`, `specs_dir`, `okf_dir`, `rules_dir`, `skills_dirs`, `ux_page_dir`, `diagrams_dir`, `src_dir_secrets`), each defaulting to the template's current hardcoded value. Repos already forked/instantiated from the template can call `uses: MauricioPerera/KDD/.github/workflows/validate.yml@main` directly instead of copy-pasting the workflow. The native `push`/`pull_request` triggers are untouched: every path-dependent `run:` uses an `inputs.X || 'literal'` fallback (the `inputs` context is only populated via `workflow_call`), verified character-for-character equal to the pre-change hardcoded values so this repo's own CI behavior is unchanged.
+- New composite action `.github/actions/validate-contracts` for repos that are NOT based on the template but have their own `knowledge/contracts/`: it checks out `MauricioPerera/KDD` into `_kdd/` (without touching the caller's files) and runs the gates against the caller's paths. `validate_contracts`/`validate_okf` are logically required (a missing dir is a real error — no KDD contracts to validate); `validate_specs` is guarded (`if [ -d ]`) since it doesn't auto-skip on a missing dir the way the other optional gates do; `validate_rules`/`validate_skills`/`validate_ux_page`/`validate_diagrams`/`scan_secrets` auto-skip cleanly when their target dir is absent. Deliberately excludes `lint_ascii` (audits KDD's own `scripts/`, not a caller's), the KDD unit-test suite, and `assemble_context` (Level-2 smoke specific to this repo). Verified via a local simulation against a synthetic caller fixture (real contracts, no `specs/`/`examples/`/`skills/`/`src/`) exercising every guard path; a live cross-repo run (a second repo actually consuming this action from GitHub) was not performed in this session.
+- README gained an EN-only "Consuming the gates without a full clone" section documenting both modes.
+
+**Fix a real footgun in `scan_secrets`, sync stale gate docs, stop CI from running the suite a 3rd time**
+- `scripts/scan_secrets.py`'s default changed from `['src', 'tests']` to `['src']`. Its own oracle (`tests/test_scan_secrets.py`) contains fixtures shaped like credentials and is NOT in `init_project.py`'s `MANIFEST`, so it's inherited by every instantiated project — the first no-args run of `scan_secrets.py` on a fresh project was erroring against files the template itself shipped. Verified fixed against a freshly-applied copy. `knowledge/contracts/secret-scan-gate.md` re-sealed (`tests_sha256`) and its "why the default is `src`" note corrected (it previously claimed instantiated projects could safely use the old two-dir default — false, since the self-reference is inherited unconditionally).
+- `.agents/AGENTS.md` and `.agents/skills/kdd-okf-ccdd-hybrid/SKILL.md`'s Level-1 gate summaries were missing `validate_diagrams`, `validate_test_commands`, and `scan_secrets` — the 4 agent-tool bridges (`.cursorrules`, `.clinerules`, `.windsurfrules`, `copilot-instructions.md`) all point here, so a stale summary meant every non-Claude-Code agent got an outdated Level-1 picture. Synced with `knowledge/validacion.md`.
+- `.github/workflows/validate.yml`'s "Run project test suite" placeholder was running the exact same `python -m unittest discover` command as the two steps before it, silently making CI run the suite 3 times against the 2x the docs describe. Replaced with a real no-op `echo` so the placeholder doesn't execute anything until a project swaps in its own runner — `knowledge/validacion.md` and `README.md`'s "runs twice" claim is accurate again without needing to change.
+
+**Secret-scan gate, agent-tool bridges, human supervision guide, glossary, PR template, and a real non-Python example**
+- New level-1 gate `scripts/scan_secrets.py`: prefix-based detection of leaked credentials (AWS `AKIA...`, GitHub `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`, Slack `xox[baprs]-`, Google `AIza...`, Stripe `sk_live_`/`pk_live_`, `-----BEGIN ... PRIVATE KEY-----` blocks) — deliberately NOT generic high-entropy detection, which would false-positive against this repo's own `tests_sha256` 64-hex-char hashes. CI runs `python scripts/scan_secrets.py src` (not the default `src tests`) because `tests/test_scan_secrets.py`, this gate's own oracle, contains fixtures shaped exactly like the patterns it detects.
+- Four thin pointer files (`.cursorrules`, `.github/copilot-instructions.md`, `.clinerules`, `.windsurfrules`) so Cursor/Copilot/Cline/Windsurf pick up `.agents/AGENTS.md` automatically instead of only working out-of-the-box for Claude Code. New `knowledge/supervision-humana.md`: a checklist for the human reviewing a KDD-produced PR, separating what CI already verified mechanically from the one thing no gate can check (whether the contract's `intent` was the right thing to ask for).
+- New `knowledge/glosario.md`: single index of the ~20 CCDD/OKF-specific terms, each linking to its normative node instead of duplicating the definition.
+- New `.github/PULL_REQUEST_TEMPLATE.md` and a CI status badge on the README.
+- New `examples/multi-lang/node/` (`greet.js` + `greet.test.js`, using Node's built-in `node:test`/`node:assert` — zero npm install, zero deps) plus `knowledge/contracts/example-node-greet.md`: the first live, CI-green non-Python contract in the repo, proving `tests_sha256` sealing and `touch_only` are genuinely language-agnostic (same `validate_contracts.py --hash` tool, no changes). CI now sets up Node alongside Python. Treated as an EXAMPLE artifact like `sample_task.md`: added to `init_project.py`'s `MANIFEST`, removed on `--apply` (verified against a fresh applied copy).
+
+**Level 1 now actually runs `test_command` — plus a real quickstart and a positioning node**
+- New level-1 gate `scripts/validate_test_commands.py`: runs the `test_command` declared in every `knowledge/contracts/*.md` and fails if any exit code is nonzero. Closes the biggest gap found in a DX/technical audit of the template: level 1 validated that a contract's `test_command` field existed and was well-formed text, but nothing actually ran it — a contract could pass all other gates with a broken or nonexistent test command and nobody would notice outside a manual check. `TEMPLATE-*.md` is excluded (not a real contract); each command gets a 120s timeout so a hung `test_command` can't hang the pipeline. This is the only gate in the repo whose `forbids` does NOT include `subprocess` — its whole intent is to execute an arbitrary command and read its exit code, documented explicitly in [`knowledge/contracts/test-command-gate.md`](knowledge/contracts/test-command-gate.md) as the sole deliberate exception to the repo's `forbids: subprocess` convention. Wired into `.github/workflows/validate.yml` as a real CI step; on Windows, `shlex.split` runs with `posix=False` (POSIX-mode backslash-escaping otherwise mangles Windows paths like `C:\Python\python.exe`). NOT added to `scripts/benchmark_gates.py`'s `GATES` tuple — that script has its own frozen oracle hardcoding the exact list of 9 gate names, and re-sealing it is left as a follow-up rather than bundled into this change.
+- New `knowledge/contracts/TEMPLATE-task-contract.md`: a placeholder contract (mirrors the existing `specs/TEMPLATE-CONTRACT.md` convention) that survives `scripts/init_project.py --apply` — it was never in the script's `MANIFEST`. `scripts/validate_contracts.py`'s `_collect_files` now skips any `TEMPLATE-*.md` in `knowledge/contracts/`, same exclusion `validate_specs.py` already had for `specs/`. Fixes the onboarding gap where the only worked example (`sample_task.md`) is deleted by `--apply` at exactly the moment a new adopter needs one.
+- New `knowledge/quickstart.md`: an executable, step-by-step tutorial from `git clone` to a first task contract passing level 1 — including a worked `saludar`/`saludar.md` example, hash-sealing the oracle, and running the new gate. Verified for real by running every step against a fresh `init_project.py --apply` copy (caught and fixed two real bugs in the process: the template's example link pointed at a node `--apply` deletes, and the quickstart node itself was an orphan not linked from `knowledge/index.md`).
+- New `knowledge/por-que-kdd.md`: honest positioning against GitHub `spec-kit`, `BMAD-METHOD`, and a plain `AGENTS.md` — what KDD verifies differently (hash-sealed frozen oracle, `touch_only` as machine-checked data, zero LLM in the mandatory gate path) and where it's currently behind (no guided intent-refinement flow, no role orchestration, more upfront cost than a bare `AGENTS.md`), plus when NOT to use it.
+
+**Diagram gate: 4 Mermaid diagram types, verified without breaking `forbids`**
+- New optional level-1 gate `scripts/validate_diagrams.py`: from-scratch, pure-Python (regex-based) parsers for the `flowchart`/`graph`, `gantt`, `pie`, and `journey` subsets of Mermaid syntax, each checked against its own declarative `.diagram-contract.json` sitting next to the `.mmd` (required nodes/edges for flowchart; required tasks/sections/dates for gantt; required slices for pie; required tasks/sections/actors/people for journey). Built specifically to respect this repo's `forbids: ['network', 'subprocess', 'llm']` on level-1 gates: the real mermaid parser lives in Node.js and would need `subprocess` to invoke, so this gate deliberately reimplements a partial grammar per type instead. `parse_gantt` derives `start`/`end` dates from literal dates + `Nd` durations, resolving `after <id>` only when `<id>` was already seen earlier in the text (single forward pass, no backward resolution). Convention documented in `knowledge/diagram-contract-spec.md`; scope is explicitly 4 of the 20 types the sibling project `mermaid-gate` (Node.js, the real mermaid parser, plus an optional LLM-judge layer for semantic checks) supports — that project stays the tool of choice for full fidelity or another diagram type, the same way the real CCDD gate is level-2/optional rather than baked into level 1.
+- Process note: implemented directly in a single session (not through the delegated PM/dev pipeline in `knowledge/metodologia-ejecucion.md`), so it isn't numbered as a `Contract NN` and has no `docs/reports/` entry — `knowledge/contracts/diagram-gate.md` is still a fully valid, sealed task contract (`tests_sha256` frozen against `tests/test_validate_diagrams.py`, 37 tests) and passes `validate_contracts`/`validate_okf` cleanly.
+- Wired in as the 9th level-1 gate: `scripts/benchmark_gates.py`'s `GATES` tuple measures it, its frozen oracle (`tests/test_benchmark_gates.py`) re-sealed to expect 9 gates instead of 8 (`tests_sha256` updated in `knowledge/contracts/benchmark-gates.md`), and `.github/workflows/validate.yml` runs `validate_diagrams.py` as a real CI step (verified green on both `ubuntu-latest` and `windows-latest`). `benchmark_gates.py` itself stays out of CI on purpose (its own contract forbids that — it's a maintenance diagnostic, not a correctness gate; unrelated to whether the gates it measures are wired in). Live-verified: `benchmark_gates.py --reps 1 --warmup 0 --suite-passes 1` measures all 9 gates with exit 0, full suite 497/497 green (up from 478 after adding the gantt/pie/journey parsers and their tests).
+
+## v1.5.0 — 2026-07-08
+
+A benchmark tool for the template's own health, and two gates that measure a mechanical/judgment boundary outside code for the first time — a web page (C30) and a git commit message (C31) — both designed by reading a real, widely-adopted third party before building, not by inventing rules from scratch.
+
+**Contract 31 — Commit message format: the mechanical/judgment boundary in git** ([C31-REPORT](docs/reports/CONTRACT-31-REPORT.md))
+- Answers a direct question about git-workflow contracts (issues, PRs, commits) with a deliberately narrow scope: only commit message format. `scripts/validate_commit_message.py` checks the Conventional Commits v1.0.0 grammar (`type(scope)?!?: description`) plus the blank-line-before-body rule Git itself relies on, calibrated against `commitlint`'s real default severities rather than invented ones: reference-breaking rules (`HEADER_MALFORMED`, `TYPE_UNKNOWN`, `SCOPE_REQUIRED`, `BLANK_LINE_MISSING`) are ERROR; style-only rules (`SUBJECT_TOO_LONG`, `SUBJECT_TRAILING_PERIOD`) are WARNING and never block. Deliberately opt-in, NOT wired into this repo's own CI — verified live: running this very commit's own message against the shipped example convention correctly flags `TYPE_UNKNOWN` (KDD's own `C31:`/`release:`/`docs:` pattern isn't Conventional Commits). "Verify a PR and decide to merge" is recognized as an already-existing pattern (dual-OS CI + protected branch in `ccdd-gate`), cross-referenced rather than rebuilt. PR/issue templates deferred — no real templates in this repo yet to calibrate against.
+
+**Contract 30 — UX/accessibility gate: the mechanical/judgment boundary on a web page** ([C30-REPORT](docs/reports/CONTRACT-30-REPORT.md))
+- Eighth level-1 gate (optional layer): `scripts/validate_ux_page.py` measures the mechanical properties of a self-contained HTML page — tag balance, i18n completeness via embedded JSON (`#i18n-data`, a new required convention over an ad-hoc JS object literal), WCAG contrast over explicitly declared pairs (`#ux-contrast-pairs`, never free CSS), a `prefers-reduced-motion` guard when animation is present, and JS-referenced IDs actually resolving. Design read against a real third party at scale before building: `google-labs-code/design.md` (25k stars) — its WCAG luminance formula matched ours independently, and its severity calibration (only broken references are errors; contrast is a warning) recalibrated ours: reference-breaking rules (`HTML_UNCLOSED`, `I18N_*`, `ID_UNRESOLVED`) are ERROR and block the exit code, while `CONTRAST_LOW`/`MOTION_UNGUARDED` are WARNING and never do. Same honest boundary as the editorial contract (C23): real browser behavior (layout overflow, sticky-pin range, console errors, rendered `:focus-visible`) and aesthetic judgment stay explicitly OUT. Shipped with a minimal proportionate example (`examples/ux-page/demo.html`); the actual KDD landing page built this session stays deliberately out of this contract's perimeter.
+
+**Contract 29 — Benchmark tool: the 7 gates + suite, measured and testable** ([C29-REPORT](docs/reports/CONTRACT-29-REPORT.md))
+- Formalizes an ad-hoc benchmark (run at the user's request after v1.4.0) into a versioned tool: `scripts/benchmark_gates.py` measures the 7 level-1 gates and the test suite. Central tension — a real benchmark needs subprocess + wall clock, the opposite of "deterministic, no subprocess" — resolved by dependency injection: all orchestration (repetitions, warmup discard, min/median/max, report formatting, exit code) is pure and receives `run_fn`/`timer_fn` as mandatory parameters; the frozen oracle always injects deterministic fakes and never triggers a real subprocess or depends on the clock. Only `main` (without explicit injection) constructs the real ones. Deliberately NOT a CI gate (diagnostic tool for the maintainer, not a correctness check); no numbers from any single run are fossilized in the repo's permanent docs.
+
+## v1.4.0 — 2026-07-08
+
+Two gates earned from the metodology's own operational record: a real incident (the CHANGELOG replace that silently lost entries) and a repeated manual practice (the PM verifying perimeters by hand) — plus one imported from analyzing an external project, both converted from prose/discipline into deterministic machine checks.
+
+**Contract 28 — Verifiable perimeter: "Tocar SOLO" from prose to machine** ([C28-REPORT](docs/reports/CONTRACT-28-REPORT.md))
+- Idea imported from analyzing Shepherd (shepherd-agents, arXiv 2605.10913 — the signature as the permission surface), translated to KDD's level: post-hoc diff verification instead of a syscall jail. New mandatory `touch_only` frontmatter key (the delegation perimeter as DATA, fnmatch patterns) with structural checks in `validate_contracts` (target must be covered; the frozen oracle must be OUT, except when the deliverable IS a test), plus `scripts/validate_perimeter.py`: the PM pipes `git diff --name-only` into it and any dev file outside the perimeter fails loudly (`OUT_OF_PERIMETER` / `TESTS_TOUCHED`). Own evidence: the PM had verified perimeters by hand in C24-C27 — repeated manual practice becomes a gate, per doctrine. All 19 existing contracts migrated; mini-YAML dialect now pinned 4-way. Honest scope: not a repo CI step (merged commits legitimately mix PM files); CI coverage comes via validate_contracts and the sealed oracle in the suite.
+
+**Contract 27 — CHANGELOG↔reports coherence gate: the incident made machine** ([C27-REPORT](docs/reports/CONTRACT-27-REPORT.md))
+- Seventh level-1 gate, earned from the real v1.2.0 incident (three CHANGELOG entries silently lost to a non-matching `str.replace`): every `docs/reports/CONTRACT-NN-REPORT.md` must have its `**Contract NN` entry with a report link — and vice versa, with no duplicates. The human rule ("grep-verify programmatic doc edits") is now deterministic CI. Optional layer: projects without a CHANGELOG or report history pass with INFO. Self-validating: this very entry is checked by the gate it describes.
+
+## v1.3.0 — 2026-07-08
+
+Contracts turn to the agent ecosystem itself: an editorial domain beyond "logic", the first gate custodying REAL repo assets (agent skills), the MCP-server registry with the evidence-earned `matches` family, and the agent–skills–MCP wiring closing the triangle — with the honest boundary map extended to five measured classes.
+
+**Contract 26 — Agent wiring: the agent–skills–MCP triangle as a contract** ([C26-REPORT](docs/reports/CONTRACT-26-REPORT.md))
+- Eighth rule-contract domain, answering "can an agent itself be contracted?" in three honest layers: agent-definition files (RECON found ZERO real ones — that gate is deliberately NOT built, evidence-first), the WIRING (this domain: which agent uses which skills/MCP servers, model tier enum, the real max-2-redelegations policy as `bounds`), and behavior (not deterministically contractable — that's CCDD's thesis: contract the artifact, not the agent). New boundary class measured: referential integrity under quantification (`refs`-inside-`each`, first appearance ⇒ no new family) — declared `code_only` and closed by code (`check_agent_wiring`, C22 precedent), de-facto chaining this domain to the C24 skills gate and C25 MCP registry.
+
+**Contract 25 — MCP-server registry as a domain + `matches` family (text properties)** ([C25-REPORT](docs/reports/CONTRACT-25-REPORT.md))
+- Seventh rule-contract domain, sourced from a real RECON: the user's live MCP config had literal passwords in `env` — exactly what a committable registry must forbid. Declarative policy: valid transports, stdio requires `command`, streamable-http requires an `https` URL, kebab-case names, and secrets ONLY as `${VAR}` references. The secrets/kebab rules are TEXT properties — the boundary class C23 measured and deferred; its second appearance triggered the evidence-first extension: new `matches` family (`{field, pattern}`, `re.search`, skips None/non-string) available top-level and inside `each`. Honest boundaries: live-server behavior stays `code_only` (network, out of level 1); server-name uniqueness is closed by construction of the source format. Previous goldens byte-intact as regression canaries; no real config or secret ever committed.
+
+**Contract 24 — Agent-skills gate: real repo assets under machine custody** ([C24-REPORT](docs/reports/CONTRACT-24-REPORT.md))
+- First gate guarding REAL repo assets instead of examples: `scripts/validate_skills.py` (level-1 gate + CI step, dual-OS) validates the agent skills in `skills/` and `.agents/skills` — SKILL.md presence, parseable frontmatter (mini-YAML dialect now pinned 3-way by the parser-coherence test), kebab-case `name` matching its directory and unique across dirs, `description` length within data-informed bounds [50, 1024], non-empty body, and resolving relative links (code spans/fences stripped). The gate's own RECON found and fixed 3 real broken links in the live skill copies (operative-first, byte-identical sync doctrine). Optional layer: missing dir passes with INFO.
+
+**Contract 23 — Editorial contract: article style as a gate** ([C23-REPORT](docs/reports/CONTRACT-23-REPORT.md))
+- Fifth example domain, beyond "logic": deterministic editorial rules (length, structure, forbidden lexicon, raw-URL/table/H1 bans, paragraph caps) as a pre-publication gate, with the style table passed as an argument (reusable across publications). Judgment rules (hook quality, tone, humor) are declared OUT by contract — Tier-2/human territory. Fourth boundary class measured: text properties (no `length`/`matches` declarative families; code-form domain per the evidence-first doctrine).
+
+## v1.2.0 — 2026-07-08
+
+The rule-contract line completes its boundary map: quantification over collections joins the declarative families, and the remaining boundary classes are closed by code, with the data+code pair demonstrated on two domains.
+
+**Contract 22 — Graph-cycle checker: boundary #3 closed by code** ([C22-REPORT](docs/reports/CONTRACT-22-REPORT.md))
+- The workflow domain's global-graph boundary ("no cycles between nodes", inexpressible by declarative families) closed the way the doctrine mandates: a code task contract (`find_graph_cycles`, canonical cycle form, diamond-safe DFS) with a frozen oracle. Cross-checked: the C20 golden's FRONTERA case, invisible to the declarative checker, is now caught by code.
+
+**Contract 21 — Didactic example: message router (event -> decision, both forms)** ([C21-REPORT](docs/reports/CONTRACT-21-REPORT.md))
+- Minimal answer to "can I contract: if a message arrives and the sender is Y run A, else B?": the decision as pure code (`route_message` with a frozen oracle pinning the implicit edges) AND the audit of taken decisions as data (`keyed_enums`), on the same domain, with cross-form coherence verified. The open-world `else` boundary is exercised in the golden (`code_only_miss`), not just declared.
+
+**Contract 20 — Workflows as a domain + `each` family (quantification over collections)** ([C20-REPORT](docs/reports/CONTRACT-20-REPORT.md))
+- Third rule-contract domain: workflow/automation policy (n8n-shaped JSON) — per-environment timeout caps, mandatory error handling, and per-node rules (every httpRequest has a timeout, no inline credentials, allowed node types). Per-node rules required the new `each` family (forall over collections, evidence-first), keeping the previous goldens byte-intact as regression canaries. Third boundary class measured and declared: global graph properties stay `code_only` (closed in C22).
+
+## v1.1.0 — 2026-07-08
+
+The rule-contract line: business rules validated as declarative data, plus a resolved financial-domain example.
+
+**Contract 19 — Second domain: border control (generality proven)** ([C19-REPORT](docs/reports/CONTRACT-19-REPORT.md))
+- The papers-please vocabulary (game-protocol) expressed as pure data over the existing engine and gate: zero code for a new domain (node + rule-set + sealed golden). Second measured boundary, same class as the first: cross-field equality (`require-field-match`) stays `code_only`, matching game-protocol's own data/logic split.
+
+**Contract 18 — Rule-contracts gate** ([C18-REPORT](docs/reports/CONTRACT-18-REPORT.md))
+- The rule-contract layer now defends itself: `scripts/validate_rules.py` (level-1 gate + CI step, dual-OS) checks known families (a typo is an ERROR, not a silently ignored rule), a mandatory hash-sealed golden (`golden: {path, sha256}`, sealed with the existing `--hash`), documented `code_only` reasons, and REPRODUCTION: the declarative engine is re-run over every golden case (a valid seal with broken semantics still fails). Optional layer: projects without rule contracts pass with INFO.
+
+**Contract 17 — Rule contract: business rules as declarative data** ([C17-REPORT](docs/reports/CONTRACT-17-REPORT.md))
+- New vertiente (lineage: `game-protocol` profiles): a deterministic rule engine (`scripts/rule_engine.py`) that validates business rules expressed as declarative DATA (`required/type/enums/bounds/refs/keyed_*`), no LLM. Falsifiable experiment on the payment domain: the declarative rule-set reproduces the C16 code validator's verdicts over a frozen golden set, with exactly one documented `code_only` boundary (exact-`True` KYC, since Python value-equality treats `1 == True`). Engine + format node are infra; the payment rule-set/golden are EXAMPLE artifacts.
+
+**Contract 16 — Example domain: per-country payment validation** ([C16-REPORT](docs/reports/CONTRACT-16-REPORT.md))
+- Resolved example of financial-domain frozen contracts: `validate_payment_limit` (per-country limit + beneficiary verification) as a pure function, with its frozen oracle and a data-model node holding the compliance rules. Added as an EXAMPLE artifact (removed by `init_project` on instantiation), so the template stays domain-neutral.
+
+## v1.0.0 — 2026-07-07
+
+### What's included
+
+The Knowledge-Driven Development (KDD) template is now complete and operationally proven:
+- **OKF Knowledge Base:** Open Knowledge Format specification, validatable by machine, with indexing and cross-referencing.
+- **CCDD Contracts (2 layers):** Execution contracts (project-level) and task contracts (developer-level) with deterministic gates and frozen test oracles.
+- **Deterministic Context Assembler:** Token-budgeted, retriever-based assembly of knowledge for agent delegations.
+- **3 Validation Gates:** Contract validator (specs + task contracts) + OKF validator (KB structure) + CI with cross-platform suite (2× run).
+- **Dogfood Cycle Complete:** Full KDD methodology demonstrated end-to-end on real features, from contract authorship to agent execution to PM verification.
+- **Upgrade Path:** Manual documented procedure for bringing improvements from upstream template releases.
+
+### History by contract
+
+**Contract 01 — Completar la plantilla KDD** ([C01-REPORT](docs/reports/CONTRACT-01-REPORT.md))
+- Ensamblador de contexto determinista con presupuesto de tokens y compaction adaptativo.
+
+**Contract 02 — Agentes: contexto ensamblado como paso obligatorio** ([C02-REPORT](docs/reports/CONTRACT-02-REPORT.md))
+- Regla 7 de agentes: ensamblador presupuestado como paso mandatorio de toda delegación.
+
+**Contract 03 — Validador OKF: spec en máquina** ([C03-REPORT](docs/reports/CONTRACT-03-REPORT.md))
+- Validador OKF que asegura conformidad de nodos con frontmatter, tipos, enlaces y alcanzabilidad.
+
+**Contract 04 — Dogfood E2E: ciclo CCDD completo en feature real** ([C04-REPORT](docs/reports/CONTRACT-04-REPORT.md))
+- Demostración end-to-end: oráculo congelado, contrato, agente efímero, gates, verificación del PM.
+
+**Contract 05 — Gate CCDD nivel 2 real** ([C05-REPORT](docs/reports/CONTRACT-05-REPORT.md))
+- Export de contratos nativo + validación CCDD contra presupuesto de complejidad ciclomática y anidamiento.
+
+**Contract 06 — init_project: instanciar en proyecto real** ([C06-REPORT](docs/reports/CONTRACT-06-REPORT.md))
+- Script init_project con dry-run y apply todo-o-nada; clon fresco validado y operativo.
+
+**Contract 07 — Correcciones del audit externo** ([C07-REPORT](docs/reports/CONTRACT-07-REPORT.md))
+- Auditoría procesada: OKF-links, contexto honesto con regex real, export independiente de cwd.
+
+**Contract 08 — Export cross-drive: fallo honesto** ([C08-REPORT](docs/reports/CONTRACT-08-REPORT.md))
+- Detección explícita de cross-drive en Windows; mensajes de I/O precisos, no "contrato inválido".
+
+**Contract 09 — Validador de specs: cierre/apertura** ([C09-REPORT](docs/reports/CONTRACT-09-REPORT.md))
+- Validador de contratos de ejecución; ABORTAR SI y Tocar SOLO obligatorios en contratos abiertos.
+
+**Contract 10 — Endurecer nivel 1: oráculos congelados y rutas reales** ([C10-REPORT](docs/reports/CONTRACT-10-REPORT.md))
+- Oráculos congelados por sha256; rutas de target y tests exigidas existentes; placeholders reales detectados.
+
+**Contract 11 — CI: matriz Windows y suite 2×** ([C11-REPORT](docs/reports/CONTRACT-11-REPORT.md))
+- CI con matriz Windows/Linux; suite corrida 2× idéntica en ambas patas.
+
+**Contract 12 — tests_sha256 obligatoria** ([C12-REPORT](docs/reports/CONTRACT-12-REPORT.md))
+- Hash de oráculos obligatorio; helper --hash para sellar; doctrina de honestidad en documentación.
+
+**Contract 13 — Lint ASCII de scripts** ([C13-REPORT](docs/reports/CONTRACT-13-REPORT.md))
+- Linter ASCII de literales en scripts; pragma de línea y skip-file; orden determinista por (archivo, línea).
+
+**Contract 14 — Versionado de la plantilla** ([C14-REPORT](docs/reports/CONTRACT-14-REPORT.md))
+- Este CHANGELOG, el nodo de upgrade (`knowledge/plantilla-upgrade.md`), la subsección de versionado del README y el test de coherencia que los fija; primer tag `v1.0.0`.
+
+**Contract 15 — Ensamblador a escala** ([C15-REPORT](docs/reports/CONTRACT-15-REPORT.md))
+- Retriever con ranking determinista (mención > tag); corte por nodo en vez de sobre la concatenación; reporte honesto (`selected`/`cut`/`omitted_nodes`); `budget.chars_per_token` configurable.
