@@ -1,25 +1,16 @@
 {
   "documentType": "kdd-observability.findings",
   "schemaVersion": "1.0",
-  "scanId": "c45_post_wiring_kdd-observability",
-  "scanTarget": "internal/posts (post-C45) - SanitizeStripped wiring verificado",
+  "scanId": "c46_slo_closure_kdd-observability",
+  "scanTarget": "internal/posts + knowledge/data_models/observability/slo_alerts.md (post-C46)",
   "findings": [
     {
-      "findingId": "obs_posts_http_error_silent-residual-001",
+      "findingId": "obs_posts_http_logger_default-residual-001",
       "gapType": "unlogged-error-path",
       "location": "internal/posts/http.go: NewHandler usa slog.Default() si no se inyecta WithLogger",
       "criticalPath": true,
       "severity": "low",
-      "remediation": "Documentar que NewHandler REQUIERE WithLogger en prod para output estructurado explicito; no rely en slog.Default().",
-      "source": "manual review -- post-C45 rescan"
-    },
-    {
-      "findingId": "obs_no_alerting_readpath-residual-003",
-      "gapType": "no-alerting",
-      "location": "internal/posts/http.go: GET /metrics expone counters pero no hay alertas (PrometheusRule) definidas; configuracion de infra",
-      "criticalPath": false,
-      "severity": "informational",
-      "remediation": "Definir SLO sobre /metrics: error_rate > 5%, p95 latency > 500ms (PrometheusRule/Alertmanager) en un nodo ops.",
+      "remediation": "Documentar que NewHandler REQUIERE WithLogger en prod para output estructurado; no rely en slog.Default().",
       "source": "manual review -- post-C45 rescan"
     }
   ]

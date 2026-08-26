@@ -64,6 +64,7 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
   - [Posts render: Markdown→HTML + hooks](./data_models/posts_render.md)
   - [Posts list/search (paginado + status)](./data_models/posts_list.md)
   - [Posts filter por author + tags](./data_models/posts_filter.md)
+  - [Posts SLO + observabilidad operacional](./data_models/observability/slo_alerts.md)
   - [Limites de pago por pais](./data_models/payment_limits.md)
   - [Reglas de control de fronteras](./data_models/border_rules.md)
   - [Politica de workflows](./data_models/workflow_policy.md)

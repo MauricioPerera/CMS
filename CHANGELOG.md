@@ -28,6 +28,7 @@ All notable changes to the KDD Template are documented here.
 **Contract 43 — Posts HTTP REST API + instrumentación** ([C43-REPORT](docs/reports/CONTRACT-43-REPORT.md)): `internal/posts/http.go` con endpoints `List`/`GetRendered`/`GetBySlugRendered`/`Metrics` (stdlib net/http). Remedia C41: slog estructurado, Tracer span, Metrics counters/latencias, ETag/304 cache. 31/31 posts tests PASS.
 **Contract 44 — Observability re-scan post-C43** ([C44-REPORT](docs/reports/CONTRACT-44-REPORT.md)): re-scan post-C43 confirma 4/6 findings C41 remedicated; 3 residual (baja severidad). `validate_observability_findings.py` PASS (3 findings).
 **Contract 45 — SanitizeStripped wiring en filterHook** ([C45-REPORT](docs/reports/CONTRACT-45-REPORT.md)): `filterHook` → `sanitizeWithMetrics` → `incSanitizeStripped` cuando `len(out) < len(in)`; tests `TestSanitize_WiredViaHandler`/`TestHandler_ListRenderedIncidentsMetric` verifican counter > 0 sobre `<script>`/`onerror=`. Residual C44 #2 cerrado (6→1 findings).
+**Contract 46 — SLO/alerts operacionales (cierre ciclo observabilidad)** ([C46-REPORT](docs/reports/CONTRACT-46-REPORT.md)): nodo `knowledge/data_models/observability/slo_alerts.md` + PrometheusRule (error rate >5%, P95 >500ms, XSS strip spike). Cierra `obs_no_alerting_readpath`; findings 6→1 (low/informational).
 
 ## v1.12.0 — 2026-07-26
 
