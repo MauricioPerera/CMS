@@ -588,3 +588,108 @@ func TestContentFilter_ListRenderedChainEndToEnd(t *testing.T) {
 		t.Errorf("HTML contiene <script> activo: %q", res.Items[0].HTML)
 	}
 }
+
+// === C40: posts filter por author + tags (migración 002) ===
+
+func TestList_FilterByAuthor(t *testing.T) {
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+
+	// Dos posts con distinto author_id; ambos publicados.
+	p1, _ := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "a1", Title: "A1", Content: "x", AuthorID: 1,
+	})
+	if _, err := s.Publish(hooks.Context{Point: "post.validate"}, p1.ID); err != nil {
+		t.Fatal(err)
+	}
+	p2, _ := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "a2", Title: "A2", Content: "x", AuthorID: 2,
+	})
+	if _, err := s.Publish(hooks.Context{Point: "post.validate"}, p2.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filtra por author_id=1.
+	res, err := s.List(ListInput{Limit: 10, Status: "", AuthorID: 1})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(res.Items) != 1 || res.Items[0].ID != p1.ID {
+		t.Errorf("AuthorID=1: %+v", res.Items)
+	}
+}
+
+func TestList_FilterByTag(t *testing.T) {
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+
+	p1, _ := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "t1", Title: "T1", Content: "x",
+	})
+	if _, err := s.Publish(hooks.Context{Point: "post.validate"}, p1.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Insertamos tags vía SQL directo (la tabla post_tags es C40).
+	for _, tag := range []string{"go", "cms"} {
+		if _, err := dbh.Exec(`INSERT INTO post_tags (post_id, tag) VALUES (?, ?)`, p1.ID, tag); err != nil {
+			t.Fatalf("insert tag %s: %v", tag, err)
+		}
+	}
+
+	// Filtra por tag "go".
+	res, err := s.List(ListInput{Limit: 10, Status: "", Tag: "go"})
+	if err != nil {
+		t.Fatalf("List tag go: %v", err)
+	}
+	if len(res.Items) != 1 || res.Items[0].ID != p1.ID {
+		t.Errorf("Tag=go: %+v", res.Items)
+	}
+
+	// Tag inexistente → 0.
+	res2, err := s.List(ListInput{Limit: 10, Status: "", Tag: "inexistente"})
+	if err != nil {
+		t.Fatalf("List tag missing: %v", err)
+	}
+	if len(res2.Items) != 0 {
+		t.Errorf("Tag=inexistente: quiere 0 items, %d", len(res2.Items))
+	}
+}
+
+func TestList_CombinedFilters(t *testing.T) {
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+
+	p1, _ := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "c1", Title: "Go CMS", Content: "x", AuthorID: 1,
+	})
+	if _, err := s.Publish(hooks.Context{Point: "post.validate"}, p1.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dbh.Exec(`INSERT INTO post_tags (post_id, tag) VALUES (?, ?)`, p1.ID, "go"); err != nil {
+		t.Fatal(err)
+	}
+	// Post de otro autor con el mismo tag (no debe aparecer filtrando author).
+	p2, _ := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "c2", Title: "Otro", Content: "x", AuthorID: 2,
+	})
+	if _, err := s.Publish(hooks.Context{Point: "post.validate"}, p2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dbh.Exec(`INSERT INTO post_tags (post_id, tag) VALUES (?, ?)`, p2.ID, "go"); err != nil {
+		t.Fatal(err)
+	}
+
+	// author=1 + tag=go + query="CMS" → sólo p1.
+	res, err := s.List(ListInput{
+		Limit: 10, Status: "", AuthorID: 1, Tag: "go", Query: "CMS",
+	})
+	if err != nil {
+		t.Fatalf("List combined: %v", err)
+	}
+	if len(res.Items) != 1 || res.Items[0].ID != p1.ID {
+		t.Errorf("combined: %+v", res.Items)
+	}
+}

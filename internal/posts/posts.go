@@ -78,21 +78,30 @@ func (s *Posts) validateHook(ctx hooks.Context, action string, post map[string]a
 }
 
 // Create inserta un post con status="draft" tras pasar post.validate (action:"create").
+// author_id es nullable (C40): se inserta sólo si >0.
 func (s *Posts) Create(ctx hooks.Context, in CreateInput) (Post, error) {
 	if in.Slug == "" || in.Title == "" || in.Content == "" {
 		return Post{}, fmt.Errorf("Create: slug, title y content son requeridos")
 	}
 	post := map[string]any{
-		"slug":    in.Slug,
-		"title":   in.Title,
-		"content": in.Content,
-		"status":  "draft",
+		"slug":     in.Slug,
+		"title":    in.Title,
+		"content":  in.Content,
+		"status":   "draft",
+		"authorId": in.AuthorID,
 	}
 	if err := s.validateHook(ctx, "create", post); err != nil {
 		return Post{}, err
 	}
-	const q = `INSERT INTO posts (slug, title, content, status) VALUES (?, ?, ?, ?)`
-	res, err := s.dbh.Exec(q, in.Slug, in.Title, in.Content, "draft")
+	var err error
+	var res sql.Result
+	if in.AuthorID > 0 {
+		const q = `INSERT INTO posts (slug, title, content, status, author_id) VALUES (?, ?, ?, ?, ?)`
+		res, err = s.dbh.Exec(q, in.Slug, in.Title, in.Content, "draft", in.AuthorID)
+	} else {
+		const q = `INSERT INTO posts (slug, title, content, status) VALUES (?, ?, ?, ?)`
+		res, err = s.dbh.Exec(q, in.Slug, in.Title, in.Content, "draft")
+	}
 	if err != nil {
 		return Post{}, fmt.Errorf("Create insert: %w", err)
 	}
@@ -196,10 +205,12 @@ func parseTime(s string) time.Time {
 
 // ListInput parametriza el listado paginado.
 type ListInput struct {
-	Limit  int
-	Offset int
-	Status string // "" = published (público); "draft"/"archived" para admin.
-	Query  string // search en slug/title.
+	Limit    int
+	Offset   int
+	Status   string // "" = published (público); "draft"/"archived" para admin.
+	Query    string // search en slug/title.
+	AuthorID int64  // filtro por author (C40); 0 = sin filtro.
+	Tag      string // filtro por tag (C40); "" = sin filtro.
 }
 
 // ListResult es una página de posts.
@@ -241,9 +252,18 @@ func buildListQuery(in ListInput) (where string, args []any) {
 		parts = append(parts, "status = ?")
 		args = append(args, in.Status)
 	}
+	if in.AuthorID > 0 {
+		parts = append(parts, "author_id = ?")
+		args = append(args, in.AuthorID)
+	}
 	if in.Query != "" {
 		parts = append(parts, "(slug LIKE ? OR title LIKE ?)")
 		args = append(args, "%"+in.Query+"%", "%"+in.Query+"%")
+	}
+	if in.Tag != "" {
+		// EXISTS sobre la tabla join post_tags (C40 migración 002).
+		parts = append(parts, "EXISTS (SELECT 1 FROM post_tags WHERE post_tags.post_id = posts.id AND post_tags.tag = ?)")
+		args = append(args, in.Tag)
 	}
 	where = ""
 	for i, p := range parts {

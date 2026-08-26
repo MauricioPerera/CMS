@@ -32,8 +32,18 @@ este nodo solo es la definición de tabla, no la lógica.
 | `title` | TEXT NOT NULL | Título del post. |
 | `content` | TEXT NOT NULL | Contenido (Markdown). |
 | `status` | TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','archived')) | Estado del post. |
+| `author_id` | INTEGER | nullable, `REFERENCES users(id)` (C40 migración 002). |
 | `created_at` | TIMESTAMP NOT NULL DEFAULT (datetime('now')) | UTC. |
 | `updated_at` | TIMESTAMP NOT NULL DEFAULT (datetime('now')) | UTC, actualizado en cada modificación. |
+
+### `post_tags` (join, C40 migración 002)
+
+| Columna | Tipo | Restricciones |
+|---|---|---|
+| `post_id` | INTEGER | PK, `REFERENCES posts(id) ON DELETE CASCADE`. |
+| `tag` | TEXT | PK. |
+
+Índice `idx_post_tags_tag` sobre `tag` para filtrado (C40).
 
 ### `users`
 

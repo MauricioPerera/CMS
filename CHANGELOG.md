@@ -22,6 +22,7 @@ All notable changes to the KDD Template are documented here.
 **Contract 37 — Posts render (Markdown→HTML + hooks)** ([C37-REPORT](docs/reports/CONTRACT-37-REPORT.md)): read path `GetRendered`/`GetBySlugRendered` en `internal/posts/render.go` con cadena `post.render`→`content.filter` (fallback `renderMarkdown` en Go para sintaxis mínima). Backward-compat preservada (`Get`/`GetBySlug` retornan Content raw). 14/14 posts tests PASS.
 **Contract 38 — Posts list/search (paginado + status)** ([C38-REPORT](docs/reports/CONTRACT-38-REPORT.md)): `List`/`ListRendered` en `internal/posts/posts.go` con `LIMIT/OFFSET`, search por slug/title (LIKE), clamping de Limit y read path público filtrando a `published`. 18/18 posts tests PASS.
 **Contract 39 — content.filter XSS sanitization (fallback defensivo)** ([C39-REPORT](docs/reports/CONTRACT-39-REPORT.md)): `Sanitize` en `internal/posts/render.go` (script tags, on*-attrs, javascript: URLs) como fallback defensivo de `content.filter`. 20/20 posts tests PASS.
+**Contract 40 — Posts filter por author + tags (migración 002)** ([C40-REPORT](docs/reports/CONTRACT-40-REPORT.md)): migración `002_add_post_authors` (author_id nullable FK + post_tags join) + `ListInput.AuthorID`/`Tag` en `internal/posts/posts.go`. 23/23 posts tests PASS.
 
 ## v1.12.0 — 2026-07-26
 
