@@ -532,3 +532,59 @@ func TestListRendered_AppliesHooks(t *testing.T) {
 		t.Errorf("HTML = %q, quiere %q", res.Items[0].HTML, "<p>RenderMe</p>")
 	}
 }
+
+// === C39: content.filter XSS sanitization (fallback defensivo) ===
+
+func TestContentFilter_XSS(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"script-tag", "<script>alert(1)</script>", ""},
+		// Sanitize neutraliza el scheme javascript: → unsafe: (no escupa el path).
+		{"javascript-url", "<a href='javascript:alert(1)'>x</a>", "<a href='unsafe:alert(1)'>x</a>"},
+		// on* attrs con o sin comillas.
+		{"onerror-quoted", `<img src=x onerror="alert(1)">`, "<img src=x>"},
+		{"onerror-bare", "<img src=x onerror=alert(1)>", "<img src=x>"},
+		{"safe-html", "<p>safe</p>", "<p>safe</p>"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := Sanitize(c.in)
+			if got != c.want {
+				t.Errorf("Sanitize(%q) = %q, quiere %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+func TestContentFilter_ListRenderedChainEndToEnd(t *testing.T) {
+	dbh := freshDB(t)
+	// Registry con post.validate (obligatorio para Create) pero SIN post.render ni
+	// content.filter → fallback renderMarkdown + Sanitize.
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "xss", Title: "XSS", Content: "<script>alert(1)</script># Hola",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.Publish(hooks.Context{Point: "post.validate"}, post.ID); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	res, err := s.ListRendered(hooks.Context{Point: "post.render"}, ListInput{Limit: 10, Status: ""})
+	if err != nil {
+		t.Fatalf("ListRendered: %v", err)
+	}
+	if len(res.Items) != 1 {
+		t.Fatalf("Items = %d, quiere 1", len(res.Items))
+	}
+	// El <script> debe ser eliminado por Sanitize (fallback).
+	if strings.Contains(res.Items[0].HTML, "<script>") {
+		t.Errorf("HTML contiene <script> activo: %q", res.Items[0].HTML)
+	}
+}

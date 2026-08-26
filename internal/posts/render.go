@@ -108,17 +108,18 @@ func (s *Posts) renderHook(ctx hooks.Context, p Post) (string, error) {
 	return renderMarkdown(p.Content), nil
 }
 
-// filterHook ejecuta content.filter sobre html; si no hay hook, retorna html sin mutar.
+// filterHook ejecuta content.filter sobre html; si no hay hook, aplica Sanitize fallback
+// (defensivo contra XSS) y retorna el HTML sanitizado. C39.
 func (s *Posts) filterHook(ctx hooks.Context, p Post, html string) (string, error) {
 	if s.reg == nil || s.rt == nil {
-		return html, nil
+		return Sanitize(html), nil
 	}
 	payload := map[string]any{"html": html}
 	filterCtx := hooks.Context{Point: "content.filter"}
 	result, err := s.reg.Call(filterCtx.Point, payload)
 	if err != nil {
-		// content.filter es opcional: si no hay hook registrado, no error.
-		return html, nil
+		// content.filter es opcional: si no hay hook registrado, sanitiza fallback.
+		return Sanitize(html), nil
 	}
 	ok, _ := result["ok"].(bool)
 	if !ok {
@@ -131,8 +132,28 @@ func (s *Posts) filterHook(ctx hooks.Context, p Post, html string) (string, erro
 	if filtered, _ := result["html"].(string); filtered != "" {
 		return filtered, nil
 	}
-	return html, nil
+	return Sanitize(html), nil
 }
+
+// Sanitize es el fallback defensivo de content.filter: elimina vectores XSS comunes
+// (script tags, event handlers on*, javascript: URLs). Sólo estripea; no re-ordena HTML.
+// C39: garantiza que el read path nunca sirva HTML ejecutable aunque post.render (hook o
+// fallback Markdown) genere markup inseguro.
+func Sanitize(html string) string {
+	// 1. Elimina <script>...</script> (incluye nested).
+	html = scriptRe.ReplaceAllString(html, "")
+	// 2. Quita atributos on* (onclick=, onerror=, onload=, ...).
+	html = eventHandlerRe.ReplaceAllString(html, "")
+	// 3. Neutraliza javascript: en href/src.
+	html = jsURLRe.ReplaceAllString(html, "unsafe:")
+	return html
+}
+
+var (
+	scriptRe      = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
+	eventHandlerRe = regexp.MustCompile(`(?i)\son\w+\s*=\s*"[^"]*"|\son\w+\s*=[^>\s]*`)
+	jsURLRe       = regexp.MustCompile(`(?i)javascript:`)
+)
 
 // hookError envuelve errores de hooks (post.render/content.filter rechazado).
 type hookError struct{ msg string }

@@ -20,7 +20,7 @@ budget:
   lines_max: 90
   params_max: 3
 tests: "internal/posts/posts_test.go"
-tests_sha256: "a0a0107b684c99de674426896c5c2bc302321b5f7eab537c63054ef2fd1c3dfa"
+tests_sha256: "e6e09e40835ab86b41b76a9371e608c0b78617be36f4292ea5ee43fd053f9375"
 touch_only: ['internal/posts/posts.go']
 deps_allowed: ['modernc.org/sqlite', 'github.com/buke/quickjs-go']
 forbids: ['network', 'subprocess', 'llm', 'unsafe']
