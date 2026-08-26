@@ -191,3 +191,153 @@ func parseTime(s string) time.Time {
 	}
 	return t
 }
+
+// === C38: Posts list/search (paginado + filtro por status) ===
+
+// ListInput parametriza el listado paginado.
+type ListInput struct {
+	Limit  int
+	Offset int
+	Status string // "" = published (público); "draft"/"archived" para admin.
+	Query  string // search en slug/title.
+}
+
+// ListResult es una página de posts.
+type ListResult struct {
+	Items   []Post
+	Total   int
+	HasMore bool
+}
+
+// RenderedListResult es una página de posts renderizados.
+type RenderedListResult struct {
+	Items   []RenderedPost
+	Total   int
+	HasMore bool
+}
+
+// clampLimit fuerza Limit a [1, 100]; 0/default → 20.
+func clampLimit(n int) int {
+	const (
+		def = 20
+		max = 100
+	)
+	if n <= 0 {
+		return def
+	}
+	if n > max {
+		return max
+	}
+	return n
+}
+
+// buildListQuery arma el WHERE clause + args para List.
+// Status="" → filtra a published (read path público); otro valor filtra exacto (admin).
+func buildListQuery(in ListInput) (where string, args []any) {
+	var parts []string
+	if in.Status == "" {
+		parts = append(parts, "status = 'published'")
+	} else {
+		parts = append(parts, "status = ?")
+		args = append(args, in.Status)
+	}
+	if in.Query != "" {
+		parts = append(parts, "(slug LIKE ? OR title LIKE ?)")
+		args = append(args, "%"+in.Query+"%", "%"+in.Query+"%")
+	}
+	where = ""
+	for i, p := range parts {
+		if i > 0 {
+			where += " AND "
+		}
+		where += p
+	}
+	return where, args
+}
+
+// scanRow escanea una fila de posts SELECT → Post.
+func scanRow(row *sql.Row) (Post, error) {
+	var p Post
+	var createdAt, updatedAt string
+	if err := row.Scan(&p.ID, &p.Slug, &p.Title, &p.Content, &p.Status, &createdAt, &updatedAt); err != nil {
+		return Post{}, err
+	}
+	p.CreatedAt = parseTime(createdAt)
+	p.UpdatedAt = parseTime(updatedAt)
+	return p, nil
+}
+
+// List retorna una página de posts según ListInput.
+func (s *Posts) List(in ListInput) (ListResult, error) {
+	in.Limit = clampLimit(in.Limit)
+	if in.Offset < 0 {
+		in.Offset = 0
+	}
+	where, args := buildListQuery(in)
+
+	// Count total (sin LIMIT).
+	var total int
+	countQ := "SELECT COUNT(*) FROM posts"
+	if where != "" {
+		countQ += " WHERE " + where
+	}
+	if err := s.dbh.QueryRow(countQ, args...).Scan(&total); err != nil {
+		return ListResult{}, wrapErr("List count", err)
+	}
+
+	// Page.
+	rowsQ := `SELECT id, slug, title, content, status, created_at, updated_at FROM posts`
+	if where != "" {
+		rowsQ += " WHERE " + where
+	}
+	rowsQ += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	args = append(args, in.Limit, in.Offset)
+
+	rows, err := s.dbh.Query(rowsQ, args...)
+	if err != nil {
+		return ListResult{}, wrapErr("List query", err)
+	}
+	defer rows.Close()
+
+	var items []Post
+	for rows.Next() {
+		var p Post
+		var createdAt, updatedAt string
+		if err := rows.Scan(&p.ID, &p.Slug, &p.Title, &p.Content, &p.Status, &createdAt, &updatedAt); err != nil {
+			return ListResult{}, wrapErr("List scan", err)
+		}
+		p.CreatedAt = parseTime(createdAt)
+		p.UpdatedAt = parseTime(updatedAt)
+		items = append(items, p)
+	}
+	if err := rows.Err(); err != nil {
+		return ListResult{}, wrapErr("List rows", err)
+	}
+
+	return ListResult{
+		Items:   items,
+		Total:   total,
+		HasMore: in.Offset+len(items) < total,
+	}, nil
+}
+
+// ListRendered retorna una página de posts con HTML renderizado (C37).
+func (s *Posts) ListRendered(ctx hooks.Context, in ListInput) (RenderedListResult, error) {
+	lr, err := s.List(in)
+	if err != nil {
+		return RenderedListResult{}, err
+	}
+	items := make([]RenderedPost, 0, len(lr.Items))
+	for _, p := range lr.Items {
+		html, err := s.render(ctx, p)
+		if err != nil {
+			return RenderedListResult{}, fmt.Errorf("ListRendered %d: %w", p.ID, err)
+		}
+		items = append(items, RenderedPost{Post: p, HTML: html})
+	}
+	return RenderedListResult{
+		Items:   items,
+		Total:   lr.Total,
+		HasMore: lr.HasMore,
+	}, nil
+}

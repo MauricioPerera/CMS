@@ -29,6 +29,17 @@ Cadena de hooks: `post.render` → `content.filter` (fallback Go cuando no hay h
 **Oráculo congelado** (14 tests en `internal/posts/posts_test.go`, PM-frozen): 7 C36 preservados
 + 7 C37. Re-sellado documentado en `docs/reports/CONTRACT-36-REPORT.md`.
 
+## Re-sellado del oráculo (C38)
+
+C38 (`posts-list`) evoluciona el mismo package `internal/posts/`, re-sellando el oráculo
+compartido `internal/posts/posts_test.go` (4 tests C38 añadidos):
+
+- SHA C37 (previo): `6d72f54a4688ade36feeb61bac2675d421043f35517f43157d218f3fab9b3197`.
+- SHA C38 (actual): `a0a0107b684c99de674426896c5c2bc302321b5f7eab537c63054ef2fd1c3dfa`.
+- Tests C36 (7) y C37 (7) preservados y verdes; añadidos `TestList_Empty`,
+  `TestList_PublishedOnly`, `TestList_PaginationAndSearch`, `TestListRendered_AppliesHooks`.
+- `tests_sha256` en `posts-render.md` y `posts-crud.md` actualizado al nuevo hash.
+
 ## Hallazgos / decisiones
 
 1. **Backward-compat preservada**: `Get`/`GetBySlug` (C36) retornan `Content` raw sin ejecutar

@@ -63,7 +63,13 @@ de SHA y lo flagtea como re-sellado:
   roto la coherencia de `Posts`. El re-sellado es visible en diff (política KDD: el cambio
   de oráculo es explícito y documentado, no silencioso).
 
+**Re-sellado acumulativo (C38):** el oráculo `internal/posts/posts_test.go` se re-selló
+nuevamente para C38 (list/search). SHA C37 → C38: `6d72f54a…` → `a0a0107b…`
+(`443abba5…` original de C36 → `a0a0107b…` final). Tests C36/C37 preservados; 4 tests C38
+añadidos. `tests_sha256` en `posts-crud.md`, `posts-render.md` y `posts-list.md` actualizado.
+
 ## Próximo contrato
 
-**C37 — Posts con hook post.render**: integrar `post.render` (Markdown→HTML) en el read path
-`Get`/`GetBySlug`, con sanitización vía `content.filter`.
+**C39 — Posts con hook content.filter end-to-end**: chain completo `post.render`→
+`content.filter` sobre listados paginados, con sanitización de XSS en content post-render.
+(C37 y C38 implementados; C39 testea el chain completo bajo carga paginada.)

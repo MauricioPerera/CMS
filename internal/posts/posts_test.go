@@ -4,6 +4,7 @@ package posts
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -394,5 +395,140 @@ func TestGet_StillReturnsRawContent(t *testing.T) {
 	// Get preserva Content raw (NO ejecuta post.render).
 	if got.Content != "# Markdown raw" {
 		t.Errorf("Get mutó Content: %q", got.Content)
+	}
+}
+
+// === C38: posts list/search (paginado + filtro) ===
+
+func TestList_Empty(t *testing.T) {
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+
+	res, err := s.List(ListInput{Limit: 10, Offset: 0, Status: ""})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(res.Items) != 0 {
+		t.Errorf("Items = %d, quiere 0", len(res.Items))
+	}
+	if res.Total != 0 {
+		t.Errorf("Total = %d, quiere 0", res.Total)
+	}
+	if res.HasMore {
+		t.Error("HasMore=true en tabla vacía")
+	}
+}
+
+func TestList_PublishedOnly(t *testing.T) {
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+
+	// Draft (no aparece en público).
+	if _, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "draft-post", Title: "D", Content: "x",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Published (creamos con status draft, luego Publish).
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "pub-post", Title: "P", Content: "y",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Publish(hooks.Context{Point: "post.validate"}, post.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.List(ListInput{Limit: 10, Offset: 0, Status: ""})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(res.Items) != 1 {
+		t.Fatalf("Items = %d, quiere 1", len(res.Items))
+	}
+	if res.Items[0].Slug != "pub-post" {
+		t.Errorf("solo published: slug = %q", res.Items[0].Slug)
+	}
+}
+
+func TestList_PaginationAndSearch(t *testing.T) {
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+
+	for i := 0; i < 5; i++ {
+		post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+			Slug: fmt.Sprintf("post-%d", i), Title: fmt.Sprintf("Title %d", i), Content: "c",
+		})
+		if err != nil {
+			t.Fatalf("Create %d: %v", i, err)
+		}
+		if i%2 == 0 {
+			if _, err := s.Publish(hooks.Context{Point: "post.validate"}, post.ID); err != nil {
+				t.Fatalf("Publish: %v", err)
+			}
+		}
+	}
+
+	// Page 1: limit 2.
+	res, err := s.List(ListInput{Limit: 2, Offset: 0, Status: ""})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(res.Items) != 2 {
+		t.Errorf("Items = %d, quiere 2", len(res.Items))
+	}
+	if !res.HasMore {
+		t.Error("HasMore=false, quiere true (5 published... 3 published)")
+	}
+	if res.Total != 3 {
+		t.Errorf("Total = %d, quiere 3", res.Total)
+	}
+
+	// Search "post-0".
+	res2, err := s.List(ListInput{Limit: 10, Offset: 0, Status: "", Query: "post-0"})
+	if err != nil {
+		t.Fatalf("List search: %v", err)
+	}
+	if len(res2.Items) != 1 || res2.Items[0].Slug != "post-0" {
+		t.Errorf("search post-0: %+v", res2.Items)
+	}
+}
+
+func TestListRendered_AppliesHooks(t *testing.T) {
+	dbh := freshDB(t)
+	rt := hooks.NewRuntime(hooks.WithMemoryLimit(32), hooks.WithTimeout(0))
+	t.Cleanup(func() { rt.Close() })
+	reg := hooks.NewRegistry(rt)
+	if err := reg.Register("post.render", "r", 50, true, `function(ctx, p) { return { ok: true, html: "<p>" + p.post.title + "</p>" }; }`); err != nil {
+		t.Fatalf("Register render: %v", err)
+	}
+	if err := reg.Register("post.validate", "v", 50, true, hookOK); err != nil {
+		t.Fatalf("Register validate: %v", err)
+	}
+
+	s := NewPosts(dbh, rt, reg)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "r1", Title: "RenderMe", Content: "raw",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.Publish(hooks.Context{Point: "post.validate"}, post.ID); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	res, err := s.ListRendered(hooks.Context{Point: "post.render"}, ListInput{Limit: 10, Status: ""})
+	if err != nil {
+		t.Fatalf("ListRendered: %v", err)
+	}
+	if len(res.Items) != 1 {
+		t.Fatalf("Items = %d, quiere 1", len(res.Items))
+	}
+	if res.Items[0].HTML != "<p>RenderMe</p>" {
+		t.Errorf("HTML = %q, quiere %q", res.Items[0].HTML, "<p>RenderMe</p>")
 	}
 }
