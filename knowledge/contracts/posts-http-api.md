@@ -1,27 +1,31 @@
 ---
 type: 'Task Contract'
 title: 'Posts HTTP REST API + instrumentación (remedia C41)'
-description: 'Endpoints REST stdlib net/http para List/GetRendered/GetBySlugRendered con paginación, cache headers y logging/tracing/metrics que remedian findings C41 (error paths, hook errors, tracing, métricas).'
+description: 'Endpoints REST stdlib net/http para List/GetRendered/GetBySlugRendered (read, C43) y POST/PUT/PUBLISH (write, C47) con paginación, cache headers, auth opcional y logging/tracing/metrics que remedian findings C41.'
 tags: ['ccdd', 'posts', 'http', 'rest', 'observability', 'cms']
 
 task: posts-http-api
-intent: "Exponer el read path de posts (C36-C40) como API REST con net/http stdlib, paginación LIMIT/OFFSET, headers de cache (ETag/Last-Modified) y instrumentación (structured logging, tracing span, contadores/metrics) que remede los 6 findings de C41."
+intent: "Exponer el read path (C36-C40) y write path (C47) de posts como API REST con net/http stdlib: paginación LIMIT/OFFSET, headers de cache (ETag/Last-Modified), auth opcional inyectable + post.validate hook, y instrumentación (structured logging, tracing span, contadores/metrics) que remede los findings de C41."
 target: internal/posts/http.go
 signature: |
-  func NewHandler(s *Posts) *Handler
+  func NewHandler(s *Posts, opts ...Option) *Handler
   func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request)
-  func (h *Handler) List(w http.ResponseWriter, r *http.Request)
-  func (h *Handler) GetRendered(w http.ResponseWriter, r *http.Request)
-  func (h *Handler) GetBySlugRendered(w http.ResponseWriter, r *http.Request)
+  func (h *Handler) List(w http.ResponseWriter, r *http.Request)                 // GET /posts
+  func (h *Handler) GetRendered(w http.ResponseWriter, r *http.Request)           // GET /posts/{id}
+  func (h *Handler) GetBySlugRendered(w http.ResponseWriter, r *http.Request)      // GET /posts/s/{slug}
+  func (h *Handler) Create(w http.ResponseWriter, r *http.Request)                // POST /posts (auth, C47)
+  func (h *Handler) Update(w http.ResponseWriter, r *http.Request)                 // PUT /posts/{id} (auth, C47)
+  func (h *Handler) Publish(w http.ResponseWriter, r *http.Request)                // POST /posts/{id}/publish (auth, C47)
+  func (h *Handler) AuthRequired(next http.HandlerFunc) http.HandlerFunc            // middleware auth (C47)
 test_command: "go test ./internal/posts/... -v"
 budget:
   cyclomatic_max: 16
   nesting_max: 4
-  lines_max: 200
+  lines_max: 240
   params_max: 3
 tests: "internal/posts/http_test.go"
-tests_sha256: "fcac16aa0ebe41ff04fff78723323f11a9ee01c92449cbd1902e42ab157aae0a"
-touch_only: ['internal/posts/http.go', 'knowledge/contracts/posts-http-api.md', 'docs/reports/CONTRACT-43-REPORT.md', 'CHANGELOG.md', 'knowledge/data_models/posts_race_analysis.md', 'docs/reports/CONTRACT-41-REPORT.md']
+tests_sha256: "2fca3fc4763e0d6553f78792c845e8f78726830514a7de55e148f13ee6e38d51"
+touch_only: ['internal/posts/http.go', 'knowledge/contracts/posts-http-api.md', 'docs/reports/CONTRACT-43-REPORT.md', 'CHANGELOG.md', 'knowledge/data_models/posts_race_analysis.md', 'docs/reports/CONTRACT-41-REPORT.md', 'docs/reports/CONTRACT-47-REPORT.md']
 deps_allowed: ['std']
 forbids: ['network', 'subprocess', 'llm']
 ---

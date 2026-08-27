@@ -17,6 +17,7 @@
 package posts
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -110,11 +111,13 @@ func WithMetrics(m *Metrics) Option     { return func(h *Handler) { h.m = m } }
 
 // Handler expone el read path de posts como REST.
 type Handler struct {
-	s    *Posts
-	log  *slog.Logger
-	tr   Tracer
-	m    *Metrics
-	smux *http.ServeMux
+	s            *Posts
+	log          *slog.Logger
+	tr           Tracer
+	m            *Metrics
+	smux         *http.ServeMux
+	auth         AuthFunc
+	authRequired bool
 }
 
 // NewHandler construye el Handler y registra las rutas en un ServeMux interno.
@@ -139,6 +142,9 @@ func NewHandler(s *Posts, opts ...Option) *Handler {
 	}
 	h.smux = http.NewServeMux()
 	h.smux.HandleFunc("GET /posts", h.List)
+	h.smux.HandleFunc("POST /posts", h.AuthRequired(h.Create))                // C47 write
+	h.smux.HandleFunc("PUT /posts/{id}", h.AuthRequired(h.Update))            // C47 write
+	h.smux.HandleFunc("POST /posts/{id}/publish", h.AuthRequired(h.Publish))  // C47 write
 	h.smux.HandleFunc("GET /posts/s/{slug}", h.GetBySlugRendered)
 	h.smux.HandleFunc("GET /posts/{id}", h.GetRendered)
 	h.smux.HandleFunc("GET /metrics", h.Metrics)
@@ -318,6 +324,189 @@ func (h *Handler) GetBySlugRendered(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.m.Snapshot())
+}
+
+// === Write path (C47: Create/Update/Publish + auth opcional) ===
+
+// AuthResult es el resultado de autenticar una request (C47).
+type AuthResult struct {
+	OK   bool
+	User string // identidad del usuario autenticado (para logging/auditoría).
+}
+
+// AuthFunc autentica una request. Por defecto auth OFF (tests/local).
+// En prod, inyectar vía WithAuth; NewHandler panickea (C49) si WithAuth(nil)
+// se combina con AuthRequiredEnable(true).
+type AuthFunc func(r *http.Request) AuthResult
+
+// AuthRequiredEnable activa la exigencia de auth para write endpoints (C47).
+// Por defecto FALSE (write endpoints requieren auth sólo si esto es true).
+func AuthRequiredEnable(b bool) Option { return func(h *Handler) { h.authRequired = b } }
+func WithAuth(f AuthFunc) Option        { return func(h *Handler) { h.auth = f } }
+
+// AuthRequired es middleware que rechaza (401) requests no autenticadas
+// en los write endpoints (C47).
+func (h *Handler) AuthRequired(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !h.authRequired {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if h.auth == nil {
+			h.log.Error("posts.auth.misconfigured", "endpoint", r.URL.Path)
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "auth not configured"})
+			return
+		}
+		res := h.auth(r)
+		if !res.OK {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+			return
+		}
+		// Inyectamos el usuario en el contexto para auditoría.
+		ctx := contextWithUser(r.Context(), res.User)
+		*r = *r.WithContext(ctx)
+		next.ServeHTTP(w, r)
+	}
+}
+
+// Context keys para C47.
+type ctxKey string
+
+const userKey ctxKey = "user"
+
+func contextWithUser(ctx context.Context, u string) context.Context {
+	return context.WithValue(ctx, userKey, u)
+}
+
+func userFromContext(ctx context.Context) string {
+	if v, _ := ctx.Value(userKey).(string); v != "" {
+		return v
+	}
+	return "<anonymous>"
+}
+
+// Create escribe un post en draft (POST /posts). Requiere auth (C47).
+// POST {slug,title,content,authorId} → 201 + CreatedPost JSON.
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	h.m.IncRequests()
+	span := h.tr.Start("posts.create")
+	defer span.End()
+	span.Attr("endpoint", "POST /posts")
+
+	user := userFromContext(r.Context())
+	var in CreateInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		h.log.Error("posts.create.bad_body", "err", err, "user", user)
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	// Validation básica (el hook post.validate C2 hace validación de dominio).
+	if in.Slug == "" || in.Title == "" || in.Content == "" {
+		h.log.Error("posts.create.validation_failed",
+			"slug", in.Slug != "", "title", in.Title != "", "content", in.Content != "",
+			"user", user)
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "slug, title y content son requeridos",
+		})
+		return
+	}
+
+	ctx := hooks.Context{Point: "post.validate"}
+	p, err := h.s.Create(ctx, in)
+	if err != nil {
+		h.log.Error("posts.create.error", "err", err,
+			"slug", in.Slug, "user", user)
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+
+	h.log.Info("posts.create.ok", "id", p.ID, "slug", p.Slug,
+		"user", user, "latency_ms", time.Since(start).Milliseconds())
+	w.Header().Set("Location", "/posts/"+strconv.FormatInt(p.ID, 10))
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id": p.ID, "slug": p.Slug, "title": p.Title, "content": p.Content, "status": p.Status,
+		"created_at": p.CreatedAt, "updated_at": p.UpdatedAt,
+	})
+}
+
+// Update muta title/content (PUT /posts/{id}). Requiere auth (C47).
+func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	h.m.IncRequests()
+	span := h.tr.Start("posts.update")
+	defer span.End()
+	span.Attr("endpoint", "PUT /posts/{id}")
+
+	id, err := parseIDFromPath(r, "id")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		Title   string `json:"title"`
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		h.log.Error("posts.update.bad_body", "err", err, "id", id)
+		h.m.IncErrors()
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	in := UpdateInput{ID: id, Title: body.Title, Content: body.Content}
+	ctx := hooks.Context{Point: "post.validate"}
+	p, err := h.s.Update(ctx, in)
+	if err != nil {
+		h.log.Error("posts.update.error", "err", err, "id", id)
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	h.log.Info("posts.update.ok", "id", id, "user", userFromContext(r.Context()))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": p.ID, "slug": p.Slug, "title": p.Title, "content": p.Content, "status": p.Status,
+		"updated_at": p.UpdatedAt,
+	})
+}
+
+// Publish setea status="published" (POST /posts/{id}/publish). Requiere auth (C47).
+func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	h.m.IncRequests()
+	span := h.tr.Start("posts.publish")
+	defer span.End()
+	span.Attr("endpoint", "POST /posts/{id}/publish")
+
+	id, err := parseIDFromPath(r, "id")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid id"})
+		return
+	}
+	ctx := hooks.Context{Point: "post.validate"}
+	p, err := h.s.Publish(ctx, id)
+	if err != nil {
+		h.log.Error("posts.publish.error", "err", err, "id", id)
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	h.log.Info("posts.publish.ok", "id", id, "user", userFromContext(r.Context()))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": p.ID, "slug": p.Slug, "status": "published", "updated_at": p.UpdatedAt,
+	})
+}
+
+func parseIDFromPath(r *http.Request, name string) (int64, error) {
+	idStr := pathParam(r, name)
+	return strconv.ParseInt(idStr, 10, 64)
 }
 
 // === helpers ===

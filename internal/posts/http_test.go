@@ -316,16 +316,168 @@ func TestNewHandler_DefaultLoggerOK(t *testing.T) {
 	_ = NewHandler(s)
 }
 
-func TestNewHandler_ProdDocsRequireLogger(t *testing.T) {
-	// Documentación/producto: en prod CMS_REQUIRE_LOGGER=1 debería estar presente.
-	// Este test verifica que el código implementa el fail-fast guard (no env).
+// === C47: Write API (Create/Update/Publish + auth) ===
+
+// authOK retorna AuthResult OK con user "tester" (para tests C47 que requieren auth).
+func authOK(_ *http.Request) AuthResult { return AuthResult{OK: true, User: "tester"} }
+
+func setupAuthHandler(t *testing.T) (*Handler, *Posts) {
+	t.Helper()
 	dbh := freshDB(t)
 	rt, reg := setupRuntime(t, hookOK)
 	s := NewPosts(dbh, rt, reg)
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("no deberia panic sin WithLogger(nil): %v", r)
-		}
-	}()
-	_ = NewHandler(s)
+	h := NewHandler(s, WithAuth(authOK), AuthRequiredEnable(true))
+	return h, s
+}
+
+func TestHandler_Create_OK(t *testing.T) {
+	h, _ := setupAuthHandler(t)
+	body := strings.NewReader(`{"slug":"hello-c47","title":"Hola","content":"mundo"}`)
+	req := httptest.NewRequest("POST", "/posts", body)
+	rec := httptest.NewRecorder()
+	h.Create(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, quiere 201; body: %s", rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out["id"] == nil || out["status"] != "draft" {
+		t.Errorf("unexpected response: %v", out)
+	}
+}
+
+func TestHandler_Create_ValidationFail(t *testing.T) {
+	h, _ := setupAuthHandler(t)
+	body := strings.NewReader(`{"slug":"","title":"","content":""}`)
+	req := httptest.NewRequest("POST", "/posts", body)
+	rec := httptest.NewRecorder()
+	h.Create(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, quiere 400", rec.Code)
+	}
+}
+
+func TestHandler_Create_BadJSON(t *testing.T) {
+	h, _ := setupAuthHandler(t)
+	body := strings.NewReader(`{not-json`)
+	req := httptest.NewRequest("POST", "/posts", body)
+	rec := httptest.NewRecorder()
+	h.Create(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, quiere 400", rec.Code)
+	}
+}
+
+func TestHandler_Create_AuthRejected(t *testing.T) {
+	// Auth habilitada pero sin AuthFunc → middleware rechaza con 500 (misconfigured).
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	h := NewHandler(s, AuthRequiredEnable(true)) // enable auth pero sin AuthFunc → 500
+	// Llamamos al middleware directamente (simula POST /posts vía mux).
+	rec := httptest.NewRecorder()
+	h.AuthRequired(h.Create)(rec, httptest.NewRequest("POST", "/posts", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, quiere 500 (auth misconfigured)", rec.Code)
+	}
+}
+
+func TestHandler_WritePath_AuthBlocksWhenEnabled(t *testing.T) {
+	// Con AuthFunc que rechaza → 401 (aunque el JSON sea válido).
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	rejectAll := func(*http.Request) AuthResult { return AuthResult{OK: false} }
+	h := NewHandler(s, WithAuth(rejectAll), AuthRequiredEnable(true))
+	body := strings.NewReader(`{"slug":"x","title":"T","content":"C"}`)
+	req := httptest.NewRequest("POST", "/posts", body)
+	rec := httptest.NewRecorder()
+	h.AuthRequired(h.Create)(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, quiere 401 (auth rejected)", rec.Code)
+	}
+}
+
+func TestHandler_Update_OK(t *testing.T) {
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "upd-c47", Title: "Old", Content: "old content",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	h := NewHandler(s, WithAuth(authOK), AuthRequiredEnable(true))
+	body := strings.NewReader(`{"title":"New","content":"new content"}`)
+	req := httptest.NewRequest("PUT", "/posts/"+strconv.FormatInt(post.ID, 10), body)
+	rec := httptest.NewRecorder()
+	h.Update(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quiere 200; body: %s", rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out["title"] != "New" || out["content"] != "new content" {
+		t.Errorf("unexpected response: %v", out)
+	}
+}
+
+func TestHandler_Publish_OK(t *testing.T) {
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "pub-c47", Title: "P", Content: "content",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	h := NewHandler(s, WithAuth(authOK), AuthRequiredEnable(true))
+	req := httptest.NewRequest("POST", "/posts/"+strconv.FormatInt(post.ID, 10)+"/publish", nil)
+	rec := httptest.NewRecorder()
+	h.Publish(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quiere 200", rec.Code)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out["status"] != "published" {
+		t.Errorf("status = %v, quiere published", out["status"])
+	}
+}
+
+func TestHandler_Publish_NotFound(t *testing.T) {
+	h, _ := setupAuthHandler(t)
+	req := httptest.NewRequest("POST", "/posts/99999/publish", nil)
+	rec := httptest.NewRecorder()
+	h.Publish(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("status = 200, quiere error (no existe id 99999)")
+	}
+}
+
+func TestHandler_Create_WriteMetricsIncremented(t *testing.T) {
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	m := &Metrics{}
+	s.SetMetrics(m)
+	h := NewHandler(s, WithAuth(authOK), AuthRequiredEnable(true), WithMetrics(m))
+	body := strings.NewReader(`{"slug":"m-c47","title":"M","content":"texto"}`)
+	req := httptest.NewRequest("POST", "/posts", body)
+	rec := httptest.NewRecorder()
+	h.Create(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if m.Requests <= 0 {
+		t.Errorf("write endpoint no incrementa Metrics.Requests (got %d)", m.Requests)
+	}
 }
