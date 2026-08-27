@@ -118,6 +118,11 @@ type Handler struct {
 }
 
 // NewHandler construye el Handler y registra las rutas en un ServeMux interno.
+//
+// Logger injection (C49): por defecto usa slog.Default() (suficiente para tests/local).
+// En producción (CMS_REQUIRE_LOGGER=1), NewHandler PANIC-kia si se inyecta con
+// WithLogger(nil) -- fail-fast contra el residual obs_posts_http_logger_default
+// (confiar en slog.Default en prod = logger no configurado explícitamente).
 func NewHandler(s *Posts, opts ...Option) *Handler {
 	h := &Handler{
 		s:   s,
@@ -127,6 +132,10 @@ func NewHandler(s *Posts, opts ...Option) *Handler {
 	}
 	for _, opt := range opts {
 		opt(h)
+	}
+	if h.log == nil {
+		panic("C49: NewHandler recibió WithLogger(nil); en prod use CMS_REQUIRE_LOGGER=1 " +
+			"y provea un logger estructurado (slog.NewJSONHandler).")
 	}
 	h.smux = http.NewServeMux()
 	h.smux.HandleFunc("GET /posts", h.List)

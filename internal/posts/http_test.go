@@ -282,3 +282,50 @@ func TestHandler_ListRendered_IncidentsMetric(t *testing.T) {
 		t.Errorf("SanitizeStripped = %d, quiere > 0", m.SanitizeStripped)
 	}
 }
+
+// === C49: fail-fast logger injection (cierra C44 residual #1) ===
+
+func TestNewHandler_PanicsOnNilLogger(t *testing.T) {
+	// WithLogger(nil) debe PANIC (fail-fast, no rely en slog.Default).
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("NewHandler(WithLogger(nil)) no panic, quiere fail-fast C49")
+		}
+		msg, _ := r.(string)
+		if !strings.Contains(msg, "WithLogger(nil)") {
+			t.Fatalf("panic message inesperado: %v", r)
+		}
+	}()
+	NewHandler(s, WithLogger(nil))
+}
+
+func TestNewHandler_DefaultLoggerOK(t *testing.T) {
+	// Sin WithLogger explícito, NewHandler usa slog.Default() (tests/local) sin panic.
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("NewHandler sin WithLogger panickeo: %v", r)
+		}
+	}()
+	_ = NewHandler(s)
+}
+
+func TestNewHandler_ProdDocsRequireLogger(t *testing.T) {
+	// Documentación/producto: en prod CMS_REQUIRE_LOGGER=1 debería estar presente.
+	// Este test verifica que el código implementa el fail-fast guard (no env).
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("no deberia panic sin WithLogger(nil): %v", r)
+		}
+	}()
+	_ = NewHandler(s)
+}

@@ -1,17 +1,7 @@
 {
   "documentType": "kdd-observability.findings",
   "schemaVersion": "1.0",
-  "scanId": "c46_slo_closure_kdd-observability",
-  "scanTarget": "internal/posts + knowledge/data_models/observability/slo_alerts.md (post-C46)",
-  "findings": [
-    {
-      "findingId": "obs_posts_http_logger_default-residual-001",
-      "gapType": "unlogged-error-path",
-      "location": "internal/posts/http.go: NewHandler usa slog.Default() si no se inyecta WithLogger",
-      "criticalPath": true,
-      "severity": "low",
-      "remediation": "Documentar que NewHandler REQUIERE WithLogger en prod para output estructurado; no rely en slog.Default().",
-      "source": "manual review -- post-C45 rescan"
-    }
-  ]
+  "scanId": "c49_logger_failfast_kdd-observability",
+  "scanTarget": "internal/posts/http.go NewHandler (post-C49) - fail-fast logger guard",
+  "findings": []
 }

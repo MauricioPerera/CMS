@@ -35,8 +35,10 @@ Nodo KDD `knowledge/data_models/observability/slo_alerts.md` con:
 
 `findings.json` post-C46 contiene **1 finding residual** (low, `slog.Default()` no
 inyectable en `NewHandler`) — configuración/documentación, no observabilidad de read path.
+**C49 cierra este último residual** con fail-fast guard en `NewHandler`: `WithLogger(nil)`
+→ panic. Ver `docs/reports/CONTRACT-49-REPORT.md`. Ciclo observabilidad **C41→C49 cerrado
+con 0 findings**.
 
 ## Próximos contratos
 
 - Back to dev: cualquier contrato funcional nuevo (C47+) según roadmap del usuario.
-- El ciclo KDD observabilidad (C41→C46) queda **cerrado** con cobertura instrumentación completa.

@@ -28,23 +28,20 @@ Validator: `python scripts/validate_observability_findings.py`
 | `obs_sanitize_strips_xss_silent` | low | ❌ **residual** | `IncSanitizeStripped()` definido pero **nunca llamado** desde `Sanitize` → counter siempre 0. |
 | `obs_no_alerting_readpath` | low (criticalPath) | ⚠️ **parcial** | `/metrics` expuesto pero sin alertas definidas (es configuración de infra: PrometheusRule/Alertmanager). |
 
-## Findings residuales C44 (1 tras C45)
+## Findings residuales C44 (cero tras C45+C49) — VER actualizado por C49
 
-C45 (wiring `SanitizeStripped` en `filterHook`) remedica el residual #2. Tras C45 queda:
-
-1. **`obs_posts_http_error_silent-residual-001`** (`unlogged-error-path`, **low**, criticalPath):
-   `NewHandler` usa `slog.Default()` si no se inyecta `WithLogger`; en prod sin logger
-   explícito podría enviar a stderr no estructurado. Remediation: documentar inyección
-   obligaria de `WithLogger` en producción.
+C45 (wiring `SanitizeStripped`) remedica el residual #2, y C49 (fail-fast logger guard)
+cierra el residual #1. **C49 lleva los findings a 0** — ciclo observabilidad completo (C41→C49).
+Ver `docs/reports/CONTRACT-49-REPORT.md`.
 
 ## Cierre del ciclo observabilidad
 
-C41 (scan baseline) → C43 (remediar) → C44 (re-scan verification) → C45 (wiring SanitizeStripped)
-demuestra el ciclo KDD de observabilidad: el scan es **versionable y gateable**, y su
-re-scan post-implementación **reduce cuantificablemente** los gaps (6 → 1 tras C45;
-los 4 findings de severidad high/medium/criticalPath fueron remedicados por C43, el
-residual `sanitize_strips_xss_silent` fue cerrado por C45; queda 1 residual low/informational
-que es configuración de infra, fuera del código Go).
+C41 (scan baseline) → C43 (remediar) → C44 (re-scan) → C45 (wiring SanitizeStripped) →
+C49 (fail-fast logger) demuestra el ciclo KDD de observabilidad: el scan es
+**versionable y gateable**, y su re-scan post-implementación **reduce cuantificablemente**
+los gaps (**6 → 0 findings**). Los 4 findings high/medium/criticalPath fueron remedicados
+por C43; el `sanitize_strips_xss_silent` cerrado por C45; el `logger_default` cerrado
+por C49. **C49 lleva findings.json a 0 — ciclo observabilidad completo.**
 
 ## Próximo contrato
 

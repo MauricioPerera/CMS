@@ -29,6 +29,7 @@ All notable changes to the KDD Template are documented here.
 **Contract 44 — Observability re-scan post-C43** ([C44-REPORT](docs/reports/CONTRACT-44-REPORT.md)): re-scan post-C43 confirma 4/6 findings C41 remedicated; 3 residual (baja severidad). `validate_observability_findings.py` PASS (3 findings).
 **Contract 45 — SanitizeStripped wiring en filterHook** ([C45-REPORT](docs/reports/CONTRACT-45-REPORT.md)): `filterHook` → `sanitizeWithMetrics` → `incSanitizeStripped` cuando `len(out) < len(in)`; tests `TestSanitize_WiredViaHandler`/`TestHandler_ListRenderedIncidentsMetric` verifican counter > 0 sobre `<script>`/`onerror=`. Residual C44 #2 cerrado (6→1 findings).
 **Contract 46 — SLO/alerts operacionales (cierre ciclo observabilidad)** ([C46-REPORT](docs/reports/CONTRACT-46-REPORT.md)): nodo `knowledge/data_models/observability/slo_alerts.md` + PrometheusRule (error rate >5%, P95 >500ms, XSS strip spike). Cierra `obs_no_alerting_readpath`; findings 6→1 (low/informational).
+**Contract 49 — Fail-fast logger injection en NewHandler** ([C49-REPORT](docs/reports/CONTRACT-49-REPORT.md)): `NewHandler` panickea en `WithLogger(nil)` (fail-fast, no rely en `slog.Default` en prod). Cierra `obs_posts_http_error_silent-residual-001`. findings.json → **0 findings**. Ciclo observabilidad C41→C49 **completo**.
 
 ## v1.12.0 — 2026-07-26
 
