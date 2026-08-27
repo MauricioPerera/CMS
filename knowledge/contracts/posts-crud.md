@@ -12,6 +12,7 @@ signature: |
   func NewPosts(dbh *sql.DB, rt *hooks.Runtime, reg *hooks.Registry) *Posts
   func (s *Posts) Create(ctx hooks.Context, in CreateInput) (Post, error)
   func (s *Posts) Update(ctx hooks.Context, in UpdateInput) (Post, error)
+  func (s *Posts) Patch(ctx hooks.Context, in PatchInput) (Post, error)   // C53 (parcial)
   func (s *Posts) Publish(ctx hooks.Context, id int64) (Post, error)
   func (s *Posts) Get(id int64) (Post, error)
   func (s *Posts) GetBySlug(slug string) (Post, error)

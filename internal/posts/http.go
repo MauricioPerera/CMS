@@ -146,6 +146,7 @@ func NewHandler(s *Posts, opts ...Option) *Handler {
 	h.smux.HandleFunc("PUT /posts/{id}", h.AuthRequired(h.Update))            // C47 write
 	h.smux.HandleFunc("POST /posts/{id}/publish", h.AuthRequired(h.Publish))  // C47 write
 	h.smux.HandleFunc("DELETE /posts/{id}", h.AuthRequired(h.Delete))           // C51 write
+	h.smux.HandleFunc("PATCH /posts/{id}", h.AuthRequired(h.Patch))             // C53 write
 	h.smux.HandleFunc("GET /posts/s/{slug}", h.GetBySlugRendered)
 	h.smux.HandleFunc("GET /posts/{id}", h.GetRendered)
 	h.smux.HandleFunc("GET /metrics", h.Metrics)
@@ -190,6 +191,69 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		"latency_ms", time.Since(start).Milliseconds())
 	h.m.RecordLatency(time.Since(start))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// === Patch (PATCH /posts/{id}) ===
+
+// Patch aplica un update parcial (sólo title y/o content). Requiere auth (C53).
+// El body JSON usa campos opcionales: {"title":"..."} o {"content":"..."} o ambos.
+func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	h.m.IncRequests()
+	span := h.tr.Start("posts.patch")
+	defer span.End()
+	span.Attr("endpoint", "PATCH /posts/{id}")
+
+	id, err := parseIDFromPath(r, "id")
+	if err != nil {
+		h.log.Error("posts.patch.bad_id", "err", err, "user", userFromContext(r.Context()))
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid id"})
+		return
+	}
+	// Decode a raw map para detectar qué campos vienen (PATCH parcial).
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		h.log.Error("posts.patch.bad_body", "err", err, "id", id,
+			"user", userFromContext(r.Context()))
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	in := PatchInput{ID: id}
+	if t, ok := raw["title"]; ok {
+		in.HasTitle = true
+		if err := json.Unmarshal(t, &in.Title); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "title invalido"})
+			return
+		}
+	}
+	if c, ok := raw["content"]; ok {
+		in.HasContent = true
+		if err := json.Unmarshal(c, &in.Content); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "content invalido"})
+			return
+		}
+	}
+	ctx := hooks.Context{Point: "post.validate"}
+	p, err := h.s.Patch(ctx, in)
+	if err != nil {
+		h.log.Error("posts.patch.error", "err", err, "id", id,
+			"user", userFromContext(r.Context()))
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	h.log.Info("posts.patch.ok", "id", id, "user", userFromContext(r.Context()),
+		"latency_ms", time.Since(start).Milliseconds())
+	h.m.RecordLatency(time.Since(start))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": p.ID, "slug": p.Slug, "title": p.Title, "content": p.Content, "status": p.Status,
+		"updated_at": p.UpdatedAt,
+	})
 }
 
 // ServeHTTP delega al mux interno.

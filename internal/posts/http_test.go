@@ -589,3 +589,51 @@ func TestHandler_Delete_BadID(t *testing.T) {
 		t.Fatalf("status = %d, quiere 400 (bad id)", rec.Code)
 	}
 }
+
+// === C53: Patch (PATCH /posts/{id}) ===
+
+func TestHandler_Patch_OK(t *testing.T) {
+	// Update parcial: sólo title. Content debe preservarse.
+	h, s := setupAuthHandler(t)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "patch-c53", Title: "Old", Content: "original content",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	body := strings.NewReader(`{"title":"New Title"}`)
+	req := httptest.NewRequest("PATCH", "/posts/"+strconv.FormatInt(post.ID, 10), body)
+	rec := httptest.NewRecorder()
+	h.Patch(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quiere 200; body: %s", rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out["title"] != "New Title" {
+		t.Errorf("title = %v, quiere New Title", out["title"])
+	}
+	if out["content"] != "original content" {
+		t.Errorf("content debe preservarse = %v", out["content"])
+	}
+}
+
+func TestHandler_Patch_NoFields(t *testing.T) {
+	// Body sin title ni content → 400 (PatchInput rechaza: al menos un campo requerido).
+	h, s := setupAuthHandler(t)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "patch-nofields", Title: "T", Content: "C",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	body := strings.NewReader(`{"slug":"ignored"}`)
+	req := httptest.NewRequest("PATCH", "/posts/"+strconv.FormatInt(post.ID, 10), body)
+	rec := httptest.NewRecorder()
+	h.Patch(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, quiere 400 (no fields)", rec.Code)
+	}
+}

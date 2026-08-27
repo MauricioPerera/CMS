@@ -9,6 +9,7 @@ package posts
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"gopress/internal/hooks"
@@ -39,6 +40,16 @@ type UpdateInput struct {
 	Title   string
 	Content string
 	Status  string
+}
+
+// PatchInput parametriza Post.Patch (C53): update parcial — sólo los campos
+// con su flag Has marcado se incluyen en el SET dinámico.
+type PatchInput struct {
+	ID        int64
+	Title     string
+	Content   string
+	HasTitle  bool
+	HasContent bool
 }
 
 // Posts es el store de posts. Comparte el Runtime+Registry de QuickJS (C2) para
@@ -148,6 +159,50 @@ func (s *Posts) Update(ctx hooks.Context, in UpdateInput) (Post, error) {
 	const q = `UPDATE posts SET title = ?, content = ?, updated_at = datetime('now') WHERE id = ?`
 	if _, err := s.dbh.Exec(q, in.Title, in.Content, in.ID); err != nil {
 		return Post{}, fmt.Errorf("Update: %w", err)
+	}
+	return s.queryByID(in.ID)
+}
+
+// Patch aplica un update parcial (sólo title y/o content). Ejecuta post.validate
+// con action:"patch" antes del UPDATE (invariante C36: hook antes de cada escritura).
+// El SET es dinámico: sólo incluye los campos cuyo flag Has está marcado.
+func (s *Posts) Patch(ctx hooks.Context, in PatchInput) (Post, error) {
+	if in.ID == 0 {
+		return Post{}, fmt.Errorf("Patch: id requerido")
+	}
+	if !in.HasTitle && !in.HasContent {
+		return Post{}, fmt.Errorf("Patch: al menos title o content deben especificarse")
+	}
+	// Verificar existencia antes del hook.
+	if err := s.dbh.QueryRow(`SELECT id FROM posts WHERE id = ?`, in.ID).Scan(&in.ID); err != nil {
+		return Post{}, fmt.Errorf("Patch lookup: %w", err)
+	}
+	post := map[string]any{
+		"id":        in.ID,
+		"title":     in.Title,
+		"content":   in.Content,
+		"hasTitle":  in.HasTitle,
+		"hasContent": in.HasContent,
+	}
+	if err := s.validateHook(ctx, "patch", post); err != nil {
+		return Post{}, err
+	}
+	// SET dinámico (Go strings.Builder; placeholders positionales).
+	var b strings.Builder
+	b.WriteString("UPDATE posts SET updated_at = datetime('now')")
+	args := []any{}
+	if in.HasTitle {
+		b.WriteString(", title = ?")
+		args = append(args, in.Title)
+	}
+	if in.HasContent {
+		b.WriteString(", content = ?")
+		args = append(args, in.Content)
+	}
+	b.WriteString(" WHERE id = ?")
+	args = append(args, in.ID)
+	if _, err := s.dbh.Exec(b.String(), args...); err != nil {
+		return Post{}, fmt.Errorf("Patch: %w", err)
 	}
 	return s.queryByID(in.ID)
 }
