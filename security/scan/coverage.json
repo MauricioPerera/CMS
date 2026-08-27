@@ -1,0 +1,67 @@
+{
+  "completeness": "partial",
+  "deferred": [],
+  "documentType": "codex-security.coverage",
+  "excludePaths": [
+    "scripts/vendor/",
+    "docs/",
+    "knowledge/",
+    "examples/",
+    "src/",
+    "tests/",
+    "accessibility/",
+    "compliance/",
+    "dependency-eol/",
+    "privacy/",
+    "test-coverage/",
+    ".github/"
+  ],
+  "explicitExclusions": [],
+  "includePaths": [
+    "internal/",
+    "db/",
+    "go.mod",
+    "go.sum"
+  ],
+  "inventoryStrategy": "repository",
+  "mode": "repository",
+  "scanId": "gopress_security_scan_2026-08-25",
+  "schemaVersion": "1.0",
+  "surfaces": [
+    {
+      "disposition": "reported",
+      "id": "http-write-path",
+      "label": "HTTP write endpoints (Create/Update/Patch/Delete/Restore) \u2014 internal/posts/http.go",
+      "receiptRefs": [],
+      "riskArea": "HTTP input handling / auth"
+    },
+    {
+      "disposition": "reported",
+      "id": "auth-middleware-default",
+      "label": "AuthRequired middleware default (authRequired=false) \u2014 internal/posts/http.go",
+      "receiptRefs": [],
+      "riskArea": "broken access control / auth bypass"
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "sql-data-layer",
+      "label": "SQLite data layer (internal/posts/posts.go) \u2014 parameterized queries",
+      "receiptRefs": [],
+      "riskArea": "SQL injection"
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "quickjs-hook-engine",
+      "label": "QuickJS hook engine (internal/hooks) \u2014 registry-controlled source",
+      "receiptRefs": [],
+      "riskArea": "code injection / sandbox escape"
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "secrets-config",
+      "label": "Secrets/config handling (go.mod, scripts) \u2014 no hardcoded secrets",
+      "receiptRefs": [],
+      "riskArea": "secret leakage"
+    }
+  ]
+}

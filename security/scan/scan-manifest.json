@@ -1,0 +1,59 @@
+{
+  "documentType": "codex-security.scan-manifest",
+  "scan": {
+    "artifacts": [
+      {
+        "mediaType": "application/json",
+        "path": "findings.json",
+        "sha256": "da0a725176f768c3230d498ea1a4d7a0401598f1f03e1d7894884af87262b86a"
+      },
+      {
+        "mediaType": "application/json",
+        "path": "coverage.json",
+        "sha256": "a5a7ee627a3ad1e6f272518b2ff87cd02aff15b6a60affd66f0d66d9cedc5bba"
+      }
+    ],
+    "completedAt": "2026-08-25T01:42:00Z",
+    "coverageRef": "coverage.json",
+    "findingsRef": "findings.json",
+    "id": "gopress_security_scan_2026-08-25",
+    "producer": {
+      "name": "claude-sonnet-5 (KDD kdd-security-scan skill)",
+      "version": "1.0"
+    },
+    "scope": {
+      "excludePaths": [
+        "scripts/vendor/",
+        "docs/",
+        "knowledge/",
+        "examples/",
+        "src/",
+        "tests/",
+        "accessibility/",
+        "compliance/",
+        "dependency-eol/",
+        "privacy/",
+        "test-coverage/",
+        ".github/"
+      ],
+      "includePaths": [
+        "internal/",
+        "db/",
+        "go.mod",
+        "go.sum"
+      ],
+      "summary": "Code-level security scan of gopress repo root (C:\\Users\\Administrador\\Desktop\\poolside test\\CMS). Scope: Go application source (internal/*, db/*, cmd/*), scripts/ (Python gates), and config (.gitignore/.env.example) for vulnerability patterns. Explicitly OUT of scope: vendored KDD tooling (scripts/vendor/codex-security), generated reports/docs (docs/, knowledge/), example data (src/), test fixtures, and third-party dependencies' source (supply-chain is a separate policy domain). Threat model: code executed locally (QuickJS hooks), HTTP input handling (stdlib net/http REST API), SQLite data layer, and secrets handling/configuration. No network-exposed service beyond stdlib httptest in tests."
+    },
+    "sealedAt": "2026-08-25T01:42:00Z",
+    "startedAt": "2026-08-25T01:35:00Z",
+    "status": "completed",
+    "target": {
+      "displayName": "GoPress CMS (gopress) \u2014 security scan target",
+      "kind": "git_revision",
+      "remote": "https://github.com/MauricioPerera/CMS",
+      "revision": "435f1f8f619d7cf9f2d23e3243fb3c25311f3c97",
+      "targetId": "https://github.com/MauricioPerera/CMS"
+    }
+  },
+  "schemaVersion": "1.0"
+}

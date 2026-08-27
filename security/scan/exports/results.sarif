@@ -1,0 +1,140 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "gopress_security_scan_2026-08-25"
+      },
+      "properties": {
+        "codexSecurityCoverageCompleteness": "partial",
+        "codexSecuritySchemaVersion": "1.0",
+        "codexSecurityTargetKind": "git_revision"
+      },
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/posts/http.go"
+                },
+                "region": {
+                  "endLine": 501,
+                  "startLine": 500
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "source"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/posts/http.go"
+                },
+                "region": {
+                  "endLine": 155,
+                  "startLine": 145
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "AuthRequired returns early (line 500) when h.authRequired is false (the NewHandler default). When authRequired is false AND auth is nil, every write endpoint (POST/PUT/PATCH/DELETE /posts + /restore) executes with NO authentication \u2014 only rate limiting applies if WithRateLimiter was injected, which is also nil by default. A deployer who forgets AuthRequiredEnable(true) + WithAuth(...) leaves the full write API open. This is a fail-open default, not a fail-closed one."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:575928a0457d060995f22d8b8a341ba7e73fec28d156d4a0ec0b93cbd1ed8e05",
+            "primaryLocationLineHash": "290218639357f85f:1"
+          },
+          "properties": {
+            "category": "broken-access-control",
+            "confidence": "high",
+            "findingId": "csf_1f8a1050145ced710edb9574",
+            "occurrenceId": "occ_37e8e19d3f2cbf1a587d3103",
+            "severity": "high"
+          },
+          "ruleId": "gopress/posts-auth-default-disabled",
+          "ruleIndex": 0
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/posts/http.go"
+                },
+                "region": {
+                  "endLine": 578,
+                  "startLine": 572
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Create decodes r.Body with json.NewDecoder without http.MaxBytesReader, so a client can stream an arbitrarily large body (e.g. PATCH/POST with a multi-GB JSON payload) that the server will buffer fully into memory before returning 400 on invalid JSON, exhausting memory or SQLite write bandwidth. No Content-Length cap or body size limit is enforced on any write handler (Create/Update/Patch/Delete/Restore)."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:1a3841ceb21f291959a10f0a6cb2d732e11d7f2214d6b799137111849f1cb6e7",
+            "primaryLocationLineHash": "9c2ea7d3a716e75d:1"
+          },
+          "properties": {
+            "category": "denial-of-service",
+            "confidence": "high",
+            "findingId": "csf_f09ed150301946aea77d4e70",
+            "occurrenceId": "occ_de6b816e7a440675501e16c9",
+            "severity": "medium"
+          },
+          "ruleId": "gopress/posts-create-no-body-size-limit",
+          "ruleIndex": 1
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Codex Security",
+          "rules": [
+            {
+              "id": "gopress/posts-auth-default-disabled",
+              "name": "gopress/posts-auth-default-disabled",
+              "properties": {
+                "tags": [
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "gopress/posts-auth-default-disabled"
+              }
+            },
+            {
+              "id": "gopress/posts-create-no-body-size-limit",
+              "name": "gopress/posts-create-no-body-size-limit",
+              "properties": {
+                "tags": [
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "gopress/posts-create-no-body-size-limit"
+              }
+            }
+          ],
+          "version": "1.0"
+        }
+      },
+      "versionControlProvenance": [
+        {
+          "repositoryUri": "https://github.com/MauricioPerera/CMS",
+          "revisionId": "435f1f8f619d7cf9f2d23e3243fb3c25311f3c97"
+        }
+      ]
+    }
+  ],
+  "version": "2.1.0"
+}

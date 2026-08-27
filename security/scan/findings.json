@@ -1,0 +1,108 @@
+{
+  "documentType": "codex-security.findings",
+  "findings": [
+    {
+      "confidence": {
+        "level": "high",
+        "rationale": "Verified by source inspection: Create/Patch/Update/Delete all call json.NewDecoder(r.Body) or bind directly without http.MaxBytesReader; default http.Server.ReadHeaderTimeout is unset and no middleware wraps r.Body."
+      },
+      "findingId": "csf_f09ed150301946aea77d4e70",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:1a3841ceb21f291959a10f0a6cb2d732e11d7f2214d6b799137111849f1cb6e7"
+      },
+      "identity": {
+        "anchor": "create-handler",
+        "instance": "create"
+      },
+      "locations": [
+        {
+          "endLine": 578,
+          "path": "internal/posts/http.go",
+          "role": "sink",
+          "startLine": 572
+        }
+      ],
+      "occurrenceId": "occ_de6b816e7a440675501e16c9",
+      "provenance": {
+        "analyzer": "human-in-the-loop static review",
+        "source": "manual code review (claude-sonnet-5 KDD kdd-security-scan skill)"
+      },
+      "remediation": "Wrap r.Body with http.MaxBytesReader(w, r.Body, <limit>) in a shared middleware (e.g. in AuthRequired or a dedicated bodySizeLimiter) applied to all write methods; reject bodies exceeding the limit with 413 Payload Too Large before json.Decode.",
+      "ruleId": "gopress/posts-create-no-body-size-limit",
+      "severity": {
+        "changeConditions": "Mitigated once http.MaxBytesReader is enforced on write handlers.",
+        "level": "medium",
+        "rationale": "Network-reachable, no auth required to send the payload (auth is optional / default-off per the handler config), low attack complexity; impact is Availability (resource exhaustion) with no confidentiality/integrity impact.",
+        "score": 5.3,
+        "scoringSystem": "CVSSv3.1",
+        "vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+      },
+      "summary": "Create decodes r.Body with json.NewDecoder without http.MaxBytesReader, so a client can stream an arbitrarily large body (e.g. PATCH/POST with a multi-GB JSON payload) that the server will buffer fully into memory before returning 400 on invalid JSON, exhausting memory or SQLite write bandwidth. No Content-Length cap or body size limit is enforced on any write handler (Create/Update/Patch/Delete/Restore).",
+      "taxonomy": {
+        "category": "denial-of-service",
+        "cwe": [
+          "CWE-400",
+          "CWE-789"
+        ]
+      },
+      "title": "Unbounded request body in POST /posts (Create) enables memory/disk exhaustion DoS"
+    },
+    {
+      "confidence": {
+        "level": "high",
+        "rationale": "Verified by source: NewHandler does not set authRequired=true by default; AuthRequired short-circuits to next.ServeHTTP when !authRequired (line 500-501); rate limiter is nil unless WithRateLimiter is passed."
+      },
+      "findingId": "csf_1f8a1050145ced710edb9574",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:575928a0457d060995f22d8b8a341ba7e73fec28d156d4a0ec0b93cbd1ed8e05"
+      },
+      "identity": {
+        "anchor": "auth-required-middleware",
+        "instance": "auth-required"
+      },
+      "locations": [
+        {
+          "endLine": 501,
+          "path": "internal/posts/http.go",
+          "role": "sink",
+          "startLine": 500
+        },
+        {
+          "endLine": 155,
+          "path": "internal/posts/http.go",
+          "role": "source",
+          "startLine": 145
+        }
+      ],
+      "occurrenceId": "occ_37e8e19d3f2cbf1a587d3103",
+      "provenance": {
+        "analyzer": "human-in-the-loop static review",
+        "source": "manual code review (claude-sonnet-5 KDD kdd-security-scan skill)"
+      },
+      "remediation": "Fail closed: in NewHandler, default authRequired=true for write routes OR panic when a write route is registered without WithAuth when CMS_REQUIRE_AUTH=1; alternatively introduce a separate WithWriteAuth option that is mandatory in production builds.",
+      "ruleId": "gopress/posts-auth-default-disabled",
+      "severity": {
+        "changeConditions": "Mitigated by defaulting authRequired=true in NewHandler or failing closed (panic) when write endpoints are registered without an AuthFunc.",
+        "level": "high",
+        "rationale": "Network-reachable, no privileges required, no user interaction; a misconfigured deploy grants unauthenticated attackers full write access to posts (create/mutate/delete content), impacting confidentiality/integrity/availability.",
+        "score": 8.1,
+        "scoringSystem": "CVSSv3.1",
+        "vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+      },
+      "summary": "AuthRequired returns early (line 500) when h.authRequired is false (the NewHandler default). When authRequired is false AND auth is nil, every write endpoint (POST/PUT/PATCH/DELETE /posts + /restore) executes with NO authentication \u2014 only rate limiting applies if WithRateLimiter was injected, which is also nil by default. A deployer who forgets AuthRequiredEnable(true) + WithAuth(...) leaves the full write API open. This is a fail-open default, not a fail-closed one.",
+      "taxonomy": {
+        "category": "broken-access-control",
+        "cwe": [
+          "CWE-306",
+          "CWE-1188",
+          "CWE-1188"
+        ]
+      },
+      "title": "Write endpoints default to NO authentication (authRequired=false); deployments forgetting AuthRequiredEnable(true) expose Create/Update/Patch/Delete/Restore to unauthenticated users"
+    }
+  ],
+  "scanId": "gopress_security_scan_2026-08-25",
+  "schemaVersion": "1.0"
+}
