@@ -31,7 +31,7 @@ budget:
   params_max: 3
 tests: "internal/posts/http_test.go"
 tests_sha256: "854cbb82c25aca1d2fb358523cc7b9625190916775b5ff1835aaff48e3df9712"
-touch_only: ['internal/posts/http.go', 'internal/posts/posts.go', 'knowledge/contracts/posts-http-api.md', 'docs/reports/CONTRACT-43-REPORT.md', 'CHANGELOG.md', 'knowledge/data_models/posts_race_analysis.md', 'docs/reports/CONTRACT-41-REPORT.md', 'docs/reports/CONTRACT-47-REPORT.md', 'docs/reports/CONTRACT-51-REPORT.md', 'docs/reports/CONTRACT-53-REPORT.md']
+touch_only: ['internal/posts/http.go', 'internal/posts/posts.go', 'internal/posts/ratelimit.go', 'internal/posts/e2e_test.go', 'knowledge/contracts/posts-http-api.md', 'docs/reports/CONTRACT-43-REPORT.md', 'CHANGELOG.md', 'knowledge/data_models/posts_race_analysis.md', 'docs/reports/CONTRACT-41-REPORT.md', 'docs/reports/CONTRACT-47-REPORT.md', 'docs/reports/CONTRACT-51-REPORT.md', 'docs/reports/CONTRACT-53-REPORT.md', 'docs/reports/CONTRACT-55-REPORT.md', 'docs/reports/CONTRACT-56-REPORT.md']
 deps_allowed: ['std']
 forbids: ['network', 'subprocess', 'llm']
 ---
