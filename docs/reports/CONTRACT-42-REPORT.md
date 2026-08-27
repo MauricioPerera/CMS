@@ -6,8 +6,14 @@ Task contract: `knowledge/contracts/posts-race-tests.md`
 
 ## Veredicto
 
-**INCONCLUSIVO en Windows/amd64** para `internal/posts` (crash de dependencia);
-**OK en `internal/hooks`** (0 data races).
+> **CIERRE post-C48**: El veredicto INCONCLUSIVO de este contrato fue **CERRADO** por C48
+> (migración `modernc.org/sqlite` → `mattn/go-sqlite3 v1.14.50`). `go test -race ./internal/...`
+> sobre Windows/amd64 → **0 data races, 0 checkptr crashes** en db/hooks/posts. El contenido
+> histórico (❌ modernc en Windows) se preserva como evidencia, pero YA NO es el estado actual
+> — ver `docs/reports/CONTRACT-48-REPORT.md` y `knowledge/data_models/posts_race_analysis.md`.
+
+**INCONCLUSIVO en Windows/amd64** para `internal/posts` (crash de dependencia, pre-C48);
+**OK en `internal/hooks`** (0 data races). **VERDE tras C48** (0 races, 0 crashes).
 
 ## Evidencia
 
@@ -53,13 +59,15 @@ Aunque `-race` no es viable para `internal/posts` en Windows, el read path está
 | Hooks (QuickJS) verificados `-race` | 0 data races en `internal/hooks`. |
 | Tests no-`-race` 23/23 PASS | No hay data races visibles sin sanitizer. |
 
-## Recomendación operativa
+## Recomendación operativa (actualizada post-C48)
 
-1. **CI (`ubuntu-latest`)**: correr `go test -race ./internal/...` → valida posts + hooks + db
-   (en linux, `modernc.org/sqlite` es compatible con `-race`).
-2. **Windows local**: usar `-race` sólo sobre `internal/hooks` (QuickJS gcc). Para posts,
-   migrar a `github.com/mattn/go-sqlite3` (CGO sqlite real) si se requiere `-race` en Windows.
-3. **No forzar** `-race` sobre `internal/posts` en Windows hasta resolver la dep.
+1. **CI (Windows `windows-latest` + Linux `ubuntu-latest`)**: correr `go test -race ./internal/...`
+   → VERDE en db/hooks/posts (0 races, 0 crashes) tras C48.
+2. **Windows local**: `-race` funciona sobre todo `internal/...` con `mattn/go-sqlite3`
+   (CGO sqlite real, gcc 15.2). `modernc.org/sqlite` **eliminado** de `go.mod`.
+3. La nota histórica "(en linux, `modernc.org/sqlite` es compatible con `-race`)" es PRE-C48:
+   el driver que bloqueaba `-race` en Windows (`modernc.org/libc@v1.9.5`) fue reemplazado
+   por `mattn/go-sqlite3 v1.14.50` (checkptr clean). Ver `posts_race_analysis.md` (C48).
 
 ## Oráculo
 

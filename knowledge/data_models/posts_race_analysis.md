@@ -1,7 +1,7 @@
 ---
 type: 'Data Model'
 title: 'Posts read-path concurrency / race analysis'
-description: 'Análisis de thread-safety del read path posts (List/ListRendered/Sanitize) bajo -race. Veredicto: hooks race-safe; posts read path blocked por modernc.org/sqlite checkptr en Windows (CI linux OK).'
+description: 'Análisis de thread-safety del read path posts (List/ListRendered/Sanitize) bajo -race. Veredicto: hooks race-safe; posts read path RACE-SAFE en Windows tras C48 (mattn/go-sqlite3, checkptr de modernc.org/libc eliminado).'
 tags: ['data-model', 'posts', 'concurrency', 'race', 'observability', 'cms']
 ---
 
