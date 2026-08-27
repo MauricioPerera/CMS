@@ -1,9 +1,67 @@
 {
   "documentType": "kdd-dependency-eol.findings",
   "schemaVersion": "1.0",
-  "scanId": "example_dependency_eol",
+  "scanId": "gopress_dependency_eol_scan_2026-08-25",
   "findings": [
-    {"findingId": "eol_leftpad-1.3.0", "dependencyName": "left-pad", "dependencyVersion": "1.3.0", "eolStatus": "supported", "severity": "informational", "remediation": "Ninguna, dependencia vigente.", "source": "endoflife.date"},
-    {"findingId": "eol_oldcrypto-1.0.0", "dependencyName": "old-crypto-lib", "dependencyVersion": "1.0.0", "eolStatus": "eol", "severity": "high", "remediation": "Migrar a la libreria sucesora mantenida antes del proximo release.", "source": "endoflife.date"}
+    {
+      "findingId": "eol_golang-migrate_migrate_v4_4.15.2",
+      "dependencyName": "github.com/golang-migrate/migrate/v4",
+      "dependencyVersion": "v4.15.2",
+      "latestVersion": "v4.19.1",
+      "eolStatus": "supported",
+      "severity": "medium",
+      "remediation": "Actualizar a v4.19.1 (latest patch del minor v4.19). No es EOL ni unmaintained, pero v4.15.2 está 3 minor versions detrás; la actualización incluye fixes de migración que pueden afectar edge cases de 003_soft_delete. Validar con `go test -race ./internal/db` tras bump.",
+      "source": "manual review (go list -m + go.dev; claude-sonnet-5 KDD kdd-dependency-eol-scan skill). endoflife.date no modela libs de Go individualmente; se cruzo latest via `go list -m -versions`."
+    },
+    {
+      "findingId": "eol_go.uber.org_atomic_v1.7.0",
+      "dependencyName": "go.uber.org/atomic",
+      "dependencyVersion": "v1.7.0",
+      "latestVersion": "v1.11.0",
+      "eolStatus": "supported",
+      "severity": "medium",
+      "remediation": "Actualizar a v1.11.0. Es indirect (transitivo de github.com/buke/quickjs-go), por lo que el bump requiere go.mod upgrade de quickjs-go o bump manual. No es urgent: v1.7.0 no tiene CVE conocida; priorizar tras el migrate bump.",
+      "source": "manual review (go list -m + go.mod graph; claude-sonnet-5 KDD kdd-dependency-eol-scan skill). Verificado transitividad: quickjs-go v0.7.7 depende de go.uber.org/atomic."
+    },
+    {
+      "findingId": "eol_buke_quickjs-go_v0.7.7",
+      "dependencyName": "github.com/buke/quickjs-go",
+      "dependencyVersion": "v0.7.7",
+      "latestVersion": "v0.7.7",
+      "eolStatus": "supported",
+      "severity": "low",
+      "remediation": "Ninguna: v0.7.7 es la última versión publicada del módulo (no hay v0.8.x/v1.x). La lib está mantenida activamente. Confirmado via `go list -m -versions`.",
+      "source": "manual review (go list -m -versions github.com/buke/quickjs-go; claude-sonnet-5 KDD kdd-dependency-eol-scan skill)."
+    },
+    {
+      "findingId": "eol_mattn_go-sqlite3_v1.14.50",
+      "dependencyName": "github.com/mattn/go-sqlite3",
+      "dependencyVersion": "v1.14.50",
+      "latestVersion": "v1.14.50",
+      "eolStatus": "supported",
+      "severity": "low",
+      "remediation": "Ninguna: v1.14.50 es current latest. mattn/go-sqlite3 v1.14.x es la línea de mantenimiento; no hay v1.15. Confirmado via `go list -m -versions`.",
+      "source": "manual review (go list -m -versions github.com/mattn/go-sqlite3; claude-sonnet-5 KDD kdd-dependency-eol-scan skill)."
+    },
+    {
+      "findingId": "eol_hashicorp_errwrap_v1.1.0",
+      "dependencyName": "github.com/hashicorp/errwrap",
+      "dependencyVersion": "v1.1.0",
+      "latestVersion": "v1.1.0",
+      "eolStatus": "supported",
+      "severity": "low",
+      "remediation": "Ninguna: v1.1.0 es current latest de la línea v1 (hashicorp no publica v2). No hay CVE en errwrap v1.1.0. Confirmado via `go list -m -versions`.",
+      "source": "manual review (go list -m -versions github.com/hashicorp/errwrap; claude-sonnet-5 KDD kdd-dependency-eol-scan skill)."
+    },
+    {
+      "findingId": "eol_hashicorp_go-multierror_v1.1.1",
+      "dependencyName": "github.com/hashicorp/go-multierror",
+      "dependencyVersion": "v1.1.1",
+      "latestVersion": "v1.1.1",
+      "eolStatus": "supported",
+      "severity": "low",
+      "remediation": "Ninguna: v1.1.1 es current latest. No hay CVE. Confirmado via `go list -m -versions github.com/hashicorp/go-multierror`.",
+      "source": "manual review (go list -m -versions; claude-sonnet-5 KDD kdd-dependency-eol-scan skill)."
+    }
   ]
 }
