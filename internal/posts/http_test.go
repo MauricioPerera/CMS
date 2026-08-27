@@ -330,6 +330,20 @@ func setupAuthHandler(t *testing.T) (*Handler, *Posts) {
 	return h, s
 }
 
+// rejectAll retorna AuthResult rechazado (para tests C52 de auth-bloqueado).
+func rejectAll(_ *http.Request) AuthResult { return AuthResult{OK: false} }
+
+// setupAuthHandlerWithReject construye un handler con auth enabled pero que rechaza todo
+// (usado por C52 para validar que AuthRequired intercepta antes del handler Delete).
+func setupAuthHandlerWithReject(t *testing.T) (*Handler, *Posts) {
+	t.Helper()
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	h := NewHandler(s, WithAuth(rejectAll), AuthRequiredEnable(true))
+	return h, s
+}
+
 func TestHandler_Create_OK(t *testing.T) {
 	h, _ := setupAuthHandler(t)
 	body := strings.NewReader(`{"slug":"hello-c47","title":"Hola","content":"mundo"}`)
@@ -538,5 +552,40 @@ func TestHandler_Delete_WriteMetricsIncremented(t *testing.T) {
 	}
 	if m.Requests <= 0 {
 		t.Errorf("DELETE no incrementa Metrics.Requests (got %d)", m.Requests)
+	}
+}
+
+// === C52: auth-reject + bad-ID paths para Delete (cobertura write path) ===
+
+func TestHandler_Delete_AuthRejected(t *testing.T) {
+	// Auth habilitada con AuthFunc que rechaza → 401 (middleware intercepta antes del handler).
+	h, s := setupAuthHandlerWithReject(t)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "auth-reject-c52", Title: "R", Content: "c52",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	req := httptest.NewRequest("DELETE", "/posts/"+strconv.FormatInt(post.ID, 10), nil)
+	rec := httptest.NewRecorder()
+	// AuthRequired(Delete) ejecuta el middleware → 401 antes de tocar el store.
+	h.AuthRequired(h.Delete)(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, quiere 401 (auth rejected)", rec.Code)
+	}
+	// El post debe seguir existiendo (delete fue bloqueado por auth).
+	if _, err := s.Get(post.ID); err != nil {
+		t.Errorf("post fue eliminado pese a auth rechazada: %v", err)
+	}
+}
+
+func TestHandler_Delete_BadID(t *testing.T) {
+	// id no numérico → 400 (parseIDFromPath falla antes del store/hook).
+	h, _ := setupAuthHandler(t)
+	req := httptest.NewRequest("DELETE", "/posts/not-a-number", nil)
+	rec := httptest.NewRecorder()
+	h.Delete(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, quiere 400 (bad id)", rec.Code)
 	}
 }

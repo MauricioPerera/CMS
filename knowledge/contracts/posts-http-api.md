@@ -25,7 +25,7 @@ budget:
   lines_max: 240
   params_max: 3
 tests: "internal/posts/http_test.go"
-tests_sha256: "bdf8182f7adac70d265c0a246c3e21107618d6579e127d10a01411056a8d1897"
+tests_sha256: "fb49259cc69732773ee83bd29a51099be6c6295bdee5f260c5768f23012b122e"
 touch_only: ['internal/posts/http.go', 'internal/posts/posts.go', 'knowledge/contracts/posts-http-api.md', 'docs/reports/CONTRACT-43-REPORT.md', 'CHANGELOG.md', 'knowledge/data_models/posts_race_analysis.md', 'docs/reports/CONTRACT-41-REPORT.md', 'docs/reports/CONTRACT-47-REPORT.md', 'docs/reports/CONTRACT-51-REPORT.md']
 deps_allowed: ['std']
 forbids: ['network', 'subprocess', 'llm']
