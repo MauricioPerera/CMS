@@ -192,6 +192,35 @@ func (s *Posts) GetBySlug(slug string) (Post, error) {
 	return p, nil
 }
 
+// Delete elimina un post por ID (hard-delete). Ejecuta post.validate con
+// action:"delete" antes del DELETE (C51 — consistente con C36: hook antes de cada escritura).
+// Retorna sql.ErrNoRows wrapeado si el post no existe.
+func (s *Posts) Delete(ctx hooks.Context, id int64) error {
+	if id == 0 {
+		return fmt.Errorf("Delete: id requerido")
+	}
+	// Verificar existencia antes del hook (evita disparar hook sobre inexistente).
+	const qExists = `SELECT id FROM posts WHERE id = ?`
+	var existsID int64
+	if err := s.dbh.QueryRow(qExists, id).Scan(&existsID); err != nil {
+		return fmt.Errorf("Delete lookup: %w", err)
+	}
+	post := map[string]any{"id": existsID, "action": "delete"}
+	if err := s.validateHook(ctx, "delete", post); err != nil {
+		return err
+	}
+	const q = `DELETE FROM posts WHERE id = ?`
+	res, err := s.dbh.Exec(q, id)
+	if err != nil {
+		return fmt.Errorf("Delete: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("Delete: no se eliminó el post id=%d: %w", id, sql.ErrNoRows)
+	}
+	return nil
+}
+
 // queryByID SELECT + reconstrucción de Post con timestamps parseados.
 func (s *Posts) queryByID(id int64) (Post, error) {
 	const q = `SELECT id, slug, title, content, status, created_at, updated_at FROM posts WHERE id = ?`

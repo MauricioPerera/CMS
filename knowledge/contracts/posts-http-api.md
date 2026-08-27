@@ -16,6 +16,7 @@ signature: |
   func (h *Handler) Create(w http.ResponseWriter, r *http.Request)                // POST /posts (auth, C47)
   func (h *Handler) Update(w http.ResponseWriter, r *http.Request)                 // PUT /posts/{id} (auth, C47)
   func (h *Handler) Publish(w http.ResponseWriter, r *http.Request)                // POST /posts/{id}/publish (auth, C47)
+  func (h *Handler) Delete(w http.ResponseWriter, r *http.Request)                 // DELETE /posts/{id} (auth, C51)
   func (h *Handler) AuthRequired(next http.HandlerFunc) http.HandlerFunc            // middleware auth (C47)
 test_command: "go test ./internal/posts/... -v"
 budget:
@@ -24,8 +25,8 @@ budget:
   lines_max: 240
   params_max: 3
 tests: "internal/posts/http_test.go"
-tests_sha256: "2fca3fc4763e0d6553f78792c845e8f78726830514a7de55e148f13ee6e38d51"
-touch_only: ['internal/posts/http.go', 'knowledge/contracts/posts-http-api.md', 'docs/reports/CONTRACT-43-REPORT.md', 'CHANGELOG.md', 'knowledge/data_models/posts_race_analysis.md', 'docs/reports/CONTRACT-41-REPORT.md', 'docs/reports/CONTRACT-47-REPORT.md']
+tests_sha256: "bdf8182f7adac70d265c0a246c3e21107618d6579e127d10a01411056a8d1897"
+touch_only: ['internal/posts/http.go', 'internal/posts/posts.go', 'knowledge/contracts/posts-http-api.md', 'docs/reports/CONTRACT-43-REPORT.md', 'CHANGELOG.md', 'knowledge/data_models/posts_race_analysis.md', 'docs/reports/CONTRACT-41-REPORT.md', 'docs/reports/CONTRACT-47-REPORT.md', 'docs/reports/CONTRACT-51-REPORT.md']
 deps_allowed: ['std']
 forbids: ['network', 'subprocess', 'llm']
 ---

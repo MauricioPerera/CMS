@@ -481,3 +481,62 @@ func TestHandler_Create_WriteMetricsIncremented(t *testing.T) {
 		t.Errorf("write endpoint no incrementa Metrics.Requests (got %d)", m.Requests)
 	}
 }
+
+// === C51: Delete (DELETE /posts/{id}) ===
+
+func TestHandler_Delete_OK(t *testing.T) {
+	// Crea un post, luego DELETE → 204 y el post deja de existir.
+	h, s := setupAuthHandler(t)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "del-c51", Title: "D", Content: "c51 content",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	req := httptest.NewRequest("DELETE", "/posts/"+strconv.FormatInt(post.ID, 10), nil)
+	rec := httptest.NewRecorder()
+	h.Delete(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, quiere 204; body: %s", rec.Code, rec.Body.String())
+	}
+	// Verificar que el post fue eliminado (Get → ErrNoRows).
+	if _, err := s.Get(post.ID); err == nil {
+		t.Error("el post sigue existiendo tras DELETE")
+	}
+}
+
+func TestHandler_Delete_NotFound(t *testing.T) {
+	// DELETE sobre id inexistente → 404 (no panic).
+	h, _ := setupAuthHandler(t)
+	req := httptest.NewRequest("DELETE", "/posts/99999", nil)
+	rec := httptest.NewRecorder()
+	h.Delete(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quiere 404", rec.Code)
+	}
+}
+
+func TestHandler_Delete_WriteMetricsIncremented(t *testing.T) {
+	// Verifica que el DELETE endpoint incrementa Metrics.Requests (observabilidad C41).
+	dbh := freshDB(t)
+	rt, reg := setupRuntime(t, hookOK)
+	s := NewPosts(dbh, rt, reg)
+	m := &Metrics{}
+	s.SetMetrics(m)
+	h := NewHandler(s, WithAuth(authOK), AuthRequiredEnable(true), WithMetrics(m))
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "del-m", Title: "D", Content: "c51",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	req := httptest.NewRequest("DELETE", "/posts/"+strconv.FormatInt(post.ID, 10), nil)
+	rec := httptest.NewRecorder()
+	h.Delete(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if m.Requests <= 0 {
+		t.Errorf("DELETE no incrementa Metrics.Requests (got %d)", m.Requests)
+	}
+}

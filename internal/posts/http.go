@@ -145,10 +145,51 @@ func NewHandler(s *Posts, opts ...Option) *Handler {
 	h.smux.HandleFunc("POST /posts", h.AuthRequired(h.Create))                // C47 write
 	h.smux.HandleFunc("PUT /posts/{id}", h.AuthRequired(h.Update))            // C47 write
 	h.smux.HandleFunc("POST /posts/{id}/publish", h.AuthRequired(h.Publish))  // C47 write
+	h.smux.HandleFunc("DELETE /posts/{id}", h.AuthRequired(h.Delete))           // C51 write
 	h.smux.HandleFunc("GET /posts/s/{slug}", h.GetBySlugRendered)
 	h.smux.HandleFunc("GET /posts/{id}", h.GetRendered)
 	h.smux.HandleFunc("GET /metrics", h.Metrics)
 	return h
+}
+
+// === Delete (DELETE /posts/{id}) ===
+
+// Delete elimina un post (DELETE /posts/{id}). Requiere auth (C47/C51).
+// Dispara post.validate (action:"delete") antes del hard-delete.
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	h.m.IncRequests()
+	span := h.tr.Start("posts.delete")
+	defer span.End()
+	span.Attr("endpoint", "DELETE /posts/{id}")
+
+	id, err := parseIDFromPath(r, "id")
+	if err != nil {
+		h.log.Error("posts.delete.bad_id", "err", err, "user", userFromContext(r.Context()))
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid id"})
+		return
+	}
+	ctx := hooks.Context{Point: "post.validate"}
+	if err := h.s.Delete(ctx, id); err != nil {
+		// Hook reject o not-found → 404 (no se filtra el mensaje interno, C41 hardening).
+		h.log.Error("posts.delete.error", "err", err, "id", id,
+			"user", userFromContext(r.Context()))
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		code := http.StatusNotFound
+		if !errors.Is(err, sql.ErrNoRows) && !strings.Contains(err.Error(), "no se eliminó") {
+			// Hook reject (post.validate) o error real → 400 (no 404).
+			code = http.StatusBadRequest
+		}
+		writeJSON(w, code, map[string]any{"error": "no se pudo eliminar el post"})
+		return
+	}
+	h.log.Info("posts.delete.ok", "id", id, "user", userFromContext(r.Context()),
+		"latency_ms", time.Since(start).Milliseconds())
+	h.m.RecordLatency(time.Since(start))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ServeHTTP delega al mux interno.
