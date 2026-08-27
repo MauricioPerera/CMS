@@ -20,6 +20,9 @@ Thumbs.db
 # Artefactos
 dist/
 build/
+bin/
+*.exe
+*.exe~
 *.egg-info/
 coverage/
 

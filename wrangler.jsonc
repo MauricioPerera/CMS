@@ -1,0 +1,19 @@
+{
+  "name": "gopress-cms",
+  "main": "workers/wrangler/src/worker.js",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_als_variable", "python_workers_run"],
+  "account_id": "<CF_ACCOUNT_ID>",
+  "routes": [{ "pattern": "cms.<ACCOUNT_SUBDOMAIN>.workers.dev/*", "script_name": "gopress-cms" }],
+  "vars": {
+    "DB_PATH": "file:/data/gopress.db?cache=shared&mode=rwc&fk=1",
+    "MIGRATIONS_DIR": "db/migrations",
+    "PORT": "8080",
+    "CMS_BODY_LIMIT": "524288",
+    "CMS_REQUIRE_AUTH": "1",
+    "CMS_REQUIRE_LOGGER": "1"
+  },
+  "triggers": { "crons": [] },
+  "truncated": true,
+  "usage_notes": "C64: gopress server como Worker via @cloudflare/sandbox. El binary Go (CGO) corre en proceso aislado dentro del Worker; el Worker proxy HTTP al binary en :PORT. account_id/route requieren configuracion. NO commitear secrets (DB_PATH es file-path, no credential). Para deploy prod: `wrangler secret put CMS_AUTH_TOKEN` y proveer WithAuth(real JWT verify)."
+}
