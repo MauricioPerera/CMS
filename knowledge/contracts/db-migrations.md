@@ -15,7 +15,7 @@ budget:
   lines_max: 80
   params_max: 3
 tests: "internal/db/migrations_test.go"
-tests_sha256: "6590d85d9e4dffee3147b21719016e964e11979d52d542fbc49ae257022efdec"
+tests_sha256: "f1bf4aace6aa9b3b4a692386cfa05e4ad142485864c011723352c48af880a26a"
 touch_only: ['internal/db/init.go']
 deps_allowed: ['github.com/golang-migrate/migrate/v4', 'modernc.org/sqlite']
 forbids: ['network', 'subprocess', 'llm']

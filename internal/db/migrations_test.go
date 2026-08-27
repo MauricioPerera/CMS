@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3" // register driver "sqlite3" (CGO, race-safe en Windows; C48: sustituye modernc.org/sqlite).
 )
 
 // migrationsURL resuelve la ruta absoluta a db/migrations desde este test,
@@ -30,7 +30,7 @@ func migrationsURL() string {
 
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dbh, err := sql.Open("sqlite", ":memory:")
+	dbh, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("abrir sqlite: %v", err)
 	}

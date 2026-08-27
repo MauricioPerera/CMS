@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
+	"github.com/golang-migrate/migrate/v4/database/sqlite3" // C48: migra de database/sqlite (modernc) a sqlite3 (mattn CGO) para -race en Windows.
 	"github.com/golang-migrate/migrate/v4/source"
 	_ "github.com/golang-migrate/migrate/v4/source/file" // register driver "file" para source.Open("file://...").
 )
@@ -48,11 +48,11 @@ func runMigrations(dbh *sql.DB, sourceURL string, action func(*migrate.Migrate) 
 	if err != nil {
 		return err
 	}
-	dbDriver, err := sqlite.WithInstance(dbh, &sqlite.Config{})
+	dbDriver, err := sqlite3.WithInstance(dbh, &sqlite3.Config{})
 	if err != nil {
-		return fmt.Errorf("crear driver sqlite: %w", err)
+		return fmt.Errorf("crear driver sqlite3: %w", err)
 	}
-	m, err := migrate.NewWithInstance("file", src, "sqlite", dbDriver)
+	m, err := migrate.NewWithInstance("file", src, "sqlite3", dbDriver)
 	if err != nil {
 		return fmt.Errorf("crear migrate: %w", err)
 	}
@@ -71,11 +71,11 @@ func Version(dbh *sql.DB, sourceURL string) (uint, error) {
 	if err != nil {
 		return 0, err
 	}
-	dbDriver, err := sqlite.WithInstance(dbh, &sqlite.Config{})
+	dbDriver, err := sqlite3.WithInstance(dbh, &sqlite3.Config{})
 	if err != nil {
-		return 0, fmt.Errorf("crear driver sqlite: %w", err)
+		return 0, fmt.Errorf("crear driver sqlite3: %w", err)
 	}
-	m, err := migrate.NewWithInstance("file", src, "sqlite", dbDriver)
+	m, err := migrate.NewWithInstance("file", src, "sqlite3", dbDriver)
 	if err != nil {
 		return 0, fmt.Errorf("crear migrate: %w", err)
 	}

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	_ "modernc.org/sqlite" // register driver "sqlite".
+	_ "github.com/mattn/go-sqlite3" // register driver "sqlite3" (CGO, race-safe en Windows; C48: sustituye modernc.org/sqlite).
 
 	"gopress/internal/db"
 	"gopress/internal/hooks"
@@ -23,7 +23,7 @@ func freshDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
-	dbh, err := sql.Open("sqlite", filepath.Join(dir, "test.db"))
+	dbh, err := sql.Open("sqlite3", filepath.Join(dir, "test.db"))
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
 	}
