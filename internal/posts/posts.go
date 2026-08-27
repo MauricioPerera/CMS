@@ -247,15 +247,16 @@ func (s *Posts) GetBySlug(slug string) (Post, error) {
 	return p, nil
 }
 
-// Delete elimina un post por ID (hard-delete). Ejecuta post.validate con
-// action:"delete" antes del DELETE (C51 — consistente con C36: hook antes de cada escritura).
-// Retorna sql.ErrNoRows wrapeado si el post no existe.
+// Delete marca un post como borrado (soft-delete, C54). Ejecuta post.validate con
+// action:"delete" antes del UPDATE (invariante C36: hook antes de cada escritura).
+// No borra físicamente: setea deleted_at = datetime('now'). Retorna sql.ErrNoRows
+// wrapeado si el post no existe o ya estaba borrado.
 func (s *Posts) Delete(ctx hooks.Context, id int64) error {
 	if id == 0 {
 		return fmt.Errorf("Delete: id requerido")
 	}
-	// Verificar existencia antes del hook (evita disparar hook sobre inexistente).
-	const qExists = `SELECT id FROM posts WHERE id = ?`
+	// Verificar existencia + no borrado antes del hook.
+	const qExists = `SELECT id FROM posts WHERE id = ? AND deleted_at IS NULL`
 	var existsID int64
 	if err := s.dbh.QueryRow(qExists, id).Scan(&existsID); err != nil {
 		return fmt.Errorf("Delete lookup: %w", err)
@@ -264,21 +265,44 @@ func (s *Posts) Delete(ctx hooks.Context, id int64) error {
 	if err := s.validateHook(ctx, "delete", post); err != nil {
 		return err
 	}
-	const q = `DELETE FROM posts WHERE id = ?`
+	const q = `UPDATE posts SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL`
 	res, err := s.dbh.Exec(q, id)
 	if err != nil {
 		return fmt.Errorf("Delete: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("Delete: no se eliminó el post id=%d: %w", id, sql.ErrNoRows)
+		return fmt.Errorf("Delete: no se marcó borrado el post id=%d: %w", id, sql.ErrNoRows)
 	}
 	return nil
 }
 
+// Restore deshace un soft-delete (C54): deleted_at = NULL. Ejecuta post.validate
+// con action:"restore". Retorna sql.ErrNoRows si el post no existe o no estaba borrado.
+func (s *Posts) Restore(ctx hooks.Context, id int64) (Post, error) {
+	if id == 0 {
+		return Post{}, fmt.Errorf("Restore: id requerido")
+	}
+	const qExists = `SELECT id FROM posts WHERE id = ? AND deleted_at IS NOT NULL`
+	var existsID int64
+	if err := s.dbh.QueryRow(qExists, id).Scan(&existsID); err != nil {
+		return Post{}, fmt.Errorf("Restore lookup: %w", err)
+	}
+	post := map[string]any{"id": existsID, "action": "restore"}
+	if err := s.validateHook(ctx, "restore", post); err != nil {
+		return Post{}, err
+	}
+	const q = `UPDATE posts SET deleted_at = NULL WHERE id = ?`
+	if _, err := s.dbh.Exec(q, id); err != nil {
+		return Post{}, fmt.Errorf("Restore: %w", err)
+	}
+	return s.queryByID(id)
+}
+
 // queryByID SELECT + reconstrucción de Post con timestamps parseados.
+// Filtra deleted_at IS NULL (C54: soft-delete → read path excluye borrados).
 func (s *Posts) queryByID(id int64) (Post, error) {
-	const q = `SELECT id, slug, title, content, status, created_at, updated_at FROM posts WHERE id = ?`
+	const q = `SELECT id, slug, title, content, status, created_at, updated_at FROM posts WHERE id = ? AND deleted_at IS NULL`
 	row := s.dbh.QueryRow(q, id)
 	var p Post
 	var createdAt, updatedAt string
@@ -345,6 +369,7 @@ func clampLimit(n int) int {
 // Status="" → filtra a published (read path público); otro valor filtra exacto (admin).
 func buildListQuery(in ListInput) (where string, args []any) {
 	var parts []string
+	parts = append(parts, "deleted_at IS NULL") // C54: read path excluye borrados (soft-delete)
 	if in.Status == "" {
 		parts = append(parts, "status = 'published'")
 	} else {

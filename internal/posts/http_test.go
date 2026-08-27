@@ -579,6 +579,70 @@ func TestHandler_Delete_AuthRejected(t *testing.T) {
 	}
 }
 
+func TestHandler_Delete_ThenRestore(t *testing.T) {
+	// C54: soft-delete → Delete marca deleted_at (no borra); Restore lo deshace.
+	h, s := setupAuthHandler(t)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "restore-c54", Title: "R", Content: "c54",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Borrar físicamente el post (soft).
+	delReq := httptest.NewRequest("DELETE", "/posts/"+strconv.FormatInt(post.ID, 10), nil)
+	delRec := httptest.NewRecorder()
+	h.Delete(delRec, delReq)
+	if delRec.Code != http.StatusNoContent {
+		t.Fatalf("Delete status = %d, quiere 204", delRec.Code)
+	}
+	// Read path debe excluir el borrado → Get retorna error (sql.ErrNoRows).
+	if _, err := s.Get(post.ID); err == nil {
+		t.Error("Get tras soft-delete debería fallar (deleted_at filter)")
+	}
+	if _, err := s.GetBySlug("restore-c54"); err == nil {
+		t.Error("GetBySlug tras soft-delete debería fallar (deleted_at filter)")
+	}
+	// Restore deshace el borrado.
+	restReq := httptest.NewRequest("POST", "/posts/"+strconv.FormatInt(post.ID, 10)+"/restore", nil)
+	restRec := httptest.NewRecorder()
+	h.Restore(restRec, restReq)
+	if restRec.Code != http.StatusOK {
+		t.Fatalf("Restore status = %d, quiere 200; body: %s", restRec.Code, restRec.Body.String())
+	}
+	// El post debe ser visible de nuevo.
+	if _, err := s.Get(post.ID); err != nil {
+		t.Errorf("Get tras restore falló: %v", err)
+	}
+}
+
+func TestHandler_Restore_NotFound(t *testing.T) {
+	// Restore sobre id inexistente → 404.
+	h, _ := setupAuthHandler(t)
+	req := httptest.NewRequest("POST", "/posts/99999/restore", nil)
+	rec := httptest.NewRecorder()
+	h.Restore(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quiere 404", rec.Code)
+	}
+}
+
+func TestHandler_Restore_NotDeleted(t *testing.T) {
+	// Restore sobre un post activo (no borrado) → 404 (Restore lookup filtra deleted_at IS NOT NULL).
+	h, s := setupAuthHandler(t)
+	post, err := s.Create(hooks.Context{Point: "post.validate"}, CreateInput{
+		Slug: "not-deleted", Title: "N", Content: "c54",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	req := httptest.NewRequest("POST", "/posts/"+strconv.FormatInt(post.ID, 10)+"/restore", nil)
+	rec := httptest.NewRecorder()
+	h.Restore(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quiere 404 (post no borrado)", rec.Code)
+	}
+}
+
 func TestHandler_Delete_BadID(t *testing.T) {
 	// id no numérico → 400 (parseIDFromPath falla antes del store/hook).
 	h, _ := setupAuthHandler(t)

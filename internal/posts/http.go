@@ -146,6 +146,7 @@ func NewHandler(s *Posts, opts ...Option) *Handler {
 	h.smux.HandleFunc("PUT /posts/{id}", h.AuthRequired(h.Update))            // C47 write
 	h.smux.HandleFunc("POST /posts/{id}/publish", h.AuthRequired(h.Publish))  // C47 write
 	h.smux.HandleFunc("DELETE /posts/{id}", h.AuthRequired(h.Delete))           // C51 write
+	h.smux.HandleFunc("POST /posts/{id}/restore", h.AuthRequired(h.Restore))      // C54 write (undelete)
 	h.smux.HandleFunc("PATCH /posts/{id}", h.AuthRequired(h.Patch))             // C53 write
 	h.smux.HandleFunc("GET /posts/s/{slug}", h.GetBySlugRendered)
 	h.smux.HandleFunc("GET /posts/{id}", h.GetRendered)
@@ -248,6 +249,44 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.log.Info("posts.patch.ok", "id", id, "user", userFromContext(r.Context()),
+		"latency_ms", time.Since(start).Milliseconds())
+	h.m.RecordLatency(time.Since(start))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": p.ID, "slug": p.Slug, "title": p.Title, "content": p.Content, "status": p.Status,
+		"updated_at": p.UpdatedAt,
+	})
+}
+
+// === Restore (POST /posts/{id}/restore) ===
+
+// Restore deshace un soft-delete (C54). Requiere auth.
+// POST /posts/{id}/restore → 200 + Post restaurado | 404 si no existe o no está borrado.
+func (h *Handler) Restore(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	h.m.IncRequests()
+	span := h.tr.Start("posts.restore")
+	defer span.End()
+	span.Attr("endpoint", "POST /posts/{id}/restore")
+
+	id, err := parseIDFromPath(r, "id")
+	if err != nil {
+		h.log.Error("posts.restore.bad_id", "err", err, "user", userFromContext(r.Context()))
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid id"})
+		return
+	}
+	ctx := hooks.Context{Point: "post.validate"}
+	p, err := h.s.Restore(ctx, id)
+	if err != nil {
+		h.log.Error("posts.restore.error", "err", err, "id", id,
+			"user", userFromContext(r.Context()))
+		h.m.IncErrors()
+		h.m.RecordLatency(time.Since(start))
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no se pudo restaurar el post"})
+		return
+	}
+	h.log.Info("posts.restore.ok", "id", id, "user", userFromContext(r.Context()),
 		"latency_ms", time.Since(start).Milliseconds())
 	h.m.RecordLatency(time.Since(start))
 	writeJSON(w, http.StatusOK, map[string]any{

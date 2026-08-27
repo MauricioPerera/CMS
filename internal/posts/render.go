@@ -47,7 +47,7 @@ func (s *Posts) GetBySlugRendered(ctx hooks.Context, slug string) (RenderedPost,
 
 // getBySlug es el SELECT por slug reutilizable (usa en GetBySlugRendered y posts.go).
 func (s *Posts) getBySlug(slug string) (Post, error) {
-	const q = `SELECT id, slug, title, content, status, created_at, updated_at FROM posts WHERE slug = ?`
+	const q = `SELECT id, slug, title, content, status, created_at, updated_at FROM posts WHERE slug = ? AND deleted_at IS NULL`
 	row := s.dbh.QueryRow(q, slug)
 	var p Post
 	var createdAt, updatedAt string
