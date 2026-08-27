@@ -1,9 +1,40 @@
 {
   "documentType": "kdd-privacy.findings",
   "schemaVersion": "1.0",
-  "scanId": "example_privacy",
+  "scanId": "gopress_privacy_scan_2026-08-25",
   "findings": [
-    {"findingId": "priv_signup-email-001", "dataCategory": "personal", "collectionPoint": "signup form", "legalBasis": "consent", "severity": "low", "remediation": "Ninguna, base legal declarada.", "source": "manual review"},
-    {"findingId": "priv_analytics-ip-001", "dataCategory": "personal", "collectionPoint": "analytics middleware", "legalBasis": "none-declared", "severity": "high", "remediation": "Agregar base legal declarada o anonimizar la IP antes de almacenarla.", "source": "manual review"}
+    {
+      "findingId": "pf_users_email_not_operative",
+      "dataCategory": "personal",
+      "collectionPoint": "db/migrations/001_init.up.sql: CREATE TABLE users (email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, display_name TEXT)",
+      "storageLocation": "SQLite table `users` (column `email`), referenced by posts.author_id (FK users.id) and sessions.user_id",
+      "legalBasis": "none-declared",
+      "retentionDefined": false,
+      "severity": "high",
+      "remediation": "Declarar base legal (GDPR Art. 6.1b contract o 6.1f legitimo interes) para users.email en el runtime; agregar endpoint de registro/login (contract AuthFunc) o, si usuarios no es una feature, DROP las tablas users/sessions y la FK author_id para reducir superficie de datos personales. Documentar politica de retencion.",
+      "source": "manual schema+code review (claude-sonnet-5 KDD kdd-privacy-scan skill): PII presente en db/migrations pero AuthFunc es un stub interface y no hay handlers HTTP de users/sessions/auth que coleccionen o expongan email."
+    },
+    {
+      "findingId": "pf_sessions_no_retention",
+      "dataCategory": "personal",
+      "collectionPoint": "db/migrations/001_init.up.sql: CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id INTEGER REFERENCES users(id), expires_at TIMESTAMP)",
+      "storageLocation": "SQLite table `sessions`",
+      "legalBasis": "none-declared",
+      "retentionDefined": false,
+      "severity": "high",
+      "remediation": "Declarar base legal (consent) y politica de expiracion/retencion de sessions; si no hay login operativo, remover la tabla. El runtime actual no genera sessions (auth=stub), por lo que es PII latente.",
+      "source": "manual schema+code review (claude-sonnet-5 KDD kdd-privacy-scan skill)"
+    },
+    {
+      "findingId": "pf_author_id_references_pii",
+      "dataCategory": "personal",
+      "collectionPoint": "db/migrations/002_add_post_authors.up.sql: ALTER TABLE posts ADD COLUMN author_id INTEGER REFERENCES users(id)",
+      "storageLocation": "SQLite table `posts` (column author_id -> users.id)",
+      "legalBasis": "none-declared",
+      "retentionDefined": false,
+      "severity": "high",
+      "remediation": "authors.email (PII) es referenciado indirectamente por posts.author_id. Si los posts se listan publicamente con author_id, documentar si author_id es publico o se anonimiza; declarar base legal para la union users<->posts.",
+      "source": "manual schema review (claude-sonnet-5 KDD kdd-privacy-scan skill)"
+    }
   ]
 }
