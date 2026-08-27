@@ -9,9 +9,19 @@
       "dependencyVersion": "v4.15.2",
       "latestVersion": "v4.19.1",
       "eolStatus": "supported",
-      "severity": "medium",
-      "remediation": "Actualizar a v4.19.1 (latest patch del minor v4.19). No es EOL ni unmaintained, pero v4.15.2 está 3 minor versions detrás; la actualización incluye fixes de migración que pueden afectar edge cases de 003_soft_delete. Validar con `go test -race ./internal/db` tras bump.",
-      "source": "manual review (go list -m + go.dev; claude-sonnet-5 KDD kdd-dependency-eol-scan skill). endoflife.date no modela libs de Go individualmente; se cruzo latest via `go list -m -versions`."
+      "severity": "low",
+      "remediation": "NO BUMP en C63: v4.19.1 exige Go directive >= 1.24 (go.mod sube de 1.22 a 1.24), rompiendo el project constraint (CMS target Go 1.22). v4.15.2 sigue soportado (no es EOL/unmaintained). Dejar como v4.15.2 hasta que el proyecto acepte bump de toolchain a Go 1.24+; validado con go test -race ./internal/db (oráculo migrations_test.go preservado).",
+      "source": "manual review (go list -m + go.dev; claude-sonnet-5 KDD kdd-dependency-eol-scan skill). Decision C63: no se forzó toolchain bump."
+    },
+    {
+      "findingId": "eol_golang-migrate_blocked_go124",
+      "dependencyName": "github.com/golang-migrate/migrate/v4",
+      "dependencyVersion": "v4.15.2",
+      "latestVersion": "v4.19.1",
+      "eolStatus": "supported",
+      "severity": "informational",
+      "remediation": "TRACKING: hasta que CMS acepte Go 1.24+, golang-migrate queda en v4.15.2 (soportado, no crítico). Revisar en C26/C27 si se hace go.mod modernization.",
+      "source": "manual review (claude-sonnet-5 KDD kdd-dependency-eol-scan skill). Decision C63."
     },
     {
       "findingId": "eol_go.uber.org_atomic_v1.7.0",
@@ -19,9 +29,9 @@
       "dependencyVersion": "v1.7.0",
       "latestVersion": "v1.11.0",
       "eolStatus": "supported",
-      "severity": "medium",
-      "remediation": "Actualizar a v1.11.0. Es indirect (transitivo de github.com/buke/quickjs-go), por lo que el bump requiere go.mod upgrade de quickjs-go o bump manual. No es urgent: v1.7.0 no tiene CVE conocida; priorizar tras el migrate bump.",
-      "source": "manual review (go list -m + go.mod graph; claude-sonnet-5 KDD kdd-dependency-eol-scan skill). Verificado transitividad: quickjs-go v0.7.7 depende de go.uber.org/atomic."
+      "severity": "low",
+      "remediation": "RESOLVED en C63: bumpeado a v1.11.0 en go.mod (indirect, transitivo de github.com/buke/quickjs-go). Compatible con Go 1.22 directive (verificado). go build/vet + go test -race ./internal/... 3/3 ok 0 races.",
+      "source": "manual review (go list -m + go.sum; claude-sonnet-5 KDD kdd-dependency-eol-scan skill). Bump aplicado en C63; migrate v4 bump RECHAZADO (v4.19.1 exige Go 1.24, rompe constraint go 1.22 del proyecto)."
     },
     {
       "findingId": "eol_buke_quickjs-go_v0.7.7",
