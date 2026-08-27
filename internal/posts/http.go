@@ -111,6 +111,12 @@ func WithMetrics(m *Metrics) Option     { return func(h *Handler) { h.m = m } }
 func WithRateLimiter(rl RateLimiter) Option { // C55: rate limit write paths
 	return func(h *Handler) { h.rl = rl }
 }
+// WithBodyLimit enable un límite de tamaño en el body de requests (C60: remedia
+// C59 finding "unbounded request body DoS"). Envuelve r.Body con MaxBytesReader
+// en AuthRequired (aplica a writes). 0 = sin límite (default, BC para tests).
+func WithBodyLimit(maxBytes int64) Option {
+	return func(h *Handler) { h.bodyLimit = maxBytes }
+}
 
 // Handler expone el read path de posts como REST.
 type Handler struct {
@@ -119,6 +125,7 @@ type Handler struct {
 	tr           Tracer
 	m            *Metrics
 	rl           RateLimiter   // C55: opcional; nil = sin rate limit
+	bodyLimit    int64         // C60: MaxBytesReader limit en writes; 0 = unlimited
 	smux         *http.ServeMux
 	auth         AuthFunc
 	authRequired bool
@@ -495,8 +502,25 @@ func WithAuth(f AuthFunc) Option        { return func(h *Handler) { h.auth = f }
 // AuthRequired es middleware que rechaza (401) requests no autenticadas
 // en los write endpoints (C47). También aplica rate limiting (C55) cuando
 // h.rl está configurado: rechaza con 429 si el token bucket está vacío.
+// Además (C60: remedia C59 finding "unbounded request body DoS") envuelve
+// r.Body con MaxBytesReader cuando h.bodyLimit > 0, rechazando con 413
+// bodies que excedan el límite (writes-only).
 func (h *Handler) AuthRequired(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// C60: límite de tamaño de body en writes (fail-fast antes de Decode).
+		// 1) Content-Length explícito excedido → 413 inmediato.
+		// 2) chunked sin Content-Length: MaxBytesReader fuerza 413/400 en Decode.
+		if h.bodyLimit > 0 && isWriteMethod(r.Method) {
+			if r.ContentLength > 0 && r.ContentLength > h.bodyLimit {
+				h.log.Error("posts.body_limit_exceeded",
+					"limit_bytes", h.bodyLimit, "cl_bytes", r.ContentLength, "path", r.URL.Path)
+				writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{
+					"error": "request body too large",
+				})
+				return
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, h.bodyLimit)
+		}
 		if !h.authRequired {
 			// Aunque auth esté OFF, rate limit (si configurado) sigue aplicándose a writes.
 			if h.rl != nil && isWriteMethod(r.Method) {
