@@ -16,9 +16,13 @@ signature: |
   func (h *Handler) Create(w http.ResponseWriter, r *http.Request)                // POST /posts (auth, C47)
   func (h *Handler) Update(w http.ResponseWriter, r *http.Request)                 // PUT /posts/{id} (auth, C47)
   func (h *Handler) Publish(w http.ResponseWriter, r *http.Request)                // POST /posts/{id}/publish (auth, C47)
-  func (h *Handler) Delete(w http.ResponseWriter, r *http.Request)                 // DELETE /posts/{id} (auth, C51)
+  func (h *Handler) Delete(w http.ResponseWriter, r *http.Request)                 // DELETE /posts/{id} (auth, C51/C54 soft-delete)
+  func (h *Handler) Restore(w http.ResponseWriter, r *http.Request)               // POST /posts/{id}/restore (auth, C54)
   func (h *Handler) Patch(w http.ResponseWriter, r *http.Request)                  // PATCH /posts/{id} (auth, C53)
-  func (h *Handler) AuthRequired(next http.HandlerFunc) http.HandlerFunc            // middleware auth (C47)
+  func (h *Handler) AuthRequired(next http.HandlerFunc) http.HandlerFunc            // middleware auth + rate limit (C47/C55)
+  func WithRateLimiter(rl RateLimiter) Option                                       // C55: token bucket write-path throttling
+  type RateLimiter interface { Allow(key string) RateLimitResult }                  // C55
+  func NewTokenBucketRateLimiter(capacity int, refillPerSec float64) *TokenBucketRateLimiter  // C55
 test_command: "go test ./internal/posts/... -v"
 budget:
   cyclomatic_max: 16
@@ -26,7 +30,7 @@ budget:
   lines_max: 240
   params_max: 3
 tests: "internal/posts/http_test.go"
-tests_sha256: "32a5c428b70961a8a6213c8666a66096e3af1d9ee90efd6eeb6f7d7be44af881"
+tests_sha256: "854cbb82c25aca1d2fb358523cc7b9625190916775b5ff1835aaff48e3df9712"
 touch_only: ['internal/posts/http.go', 'internal/posts/posts.go', 'knowledge/contracts/posts-http-api.md', 'docs/reports/CONTRACT-43-REPORT.md', 'CHANGELOG.md', 'knowledge/data_models/posts_race_analysis.md', 'docs/reports/CONTRACT-41-REPORT.md', 'docs/reports/CONTRACT-47-REPORT.md', 'docs/reports/CONTRACT-51-REPORT.md', 'docs/reports/CONTRACT-53-REPORT.md']
 deps_allowed: ['std']
 forbids: ['network', 'subprocess', 'llm']

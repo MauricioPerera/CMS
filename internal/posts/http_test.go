@@ -654,6 +654,80 @@ func TestHandler_Delete_BadID(t *testing.T) {
 	}
 }
 
+// === C55 rate limiting ===
+
+func TestHandler_RateLimit_AllowsUnderLimit(t *testing.T) {
+	// C55: capacidad 2 → 2 requests permitidas, 3ra = 429.
+	rl := NewTokenBucketRateLimiter(2, 0.01) // refill lento (no recupera entre requests)
+	h, s := setupAuthHandler(t)
+	h.rl = rl
+	post, err := s.Create(hooksContext(), CreateInput{
+		Slug: "rl-allow", Title: "R", Content: "c",
+	})
+	if err != nil {
+		t.Fatalf("Create setup: %v", err)
+	}
+	idStr := strconv.FormatInt(post.ID, 10)
+	patch := func() int {
+		r := httptest.NewRequest("PATCH", "/posts/"+idStr, strings.NewReader(`{"title":"x"}`))
+		rec := httptest.NewRecorder()
+		h.AuthRequired(h.Patch).ServeHTTP(rec, r)
+		return rec.Code
+	}
+	for i := 0; i < 2; i++ {
+		if code := patch(); code != http.StatusOK {
+			t.Fatalf("request %d: status=%d quiere 200", i, code)
+		}
+	}
+	// 3ra: bucket vacío → 429 (rate limit, antes de ejecutar Patch).
+	if code := patch(); code != http.StatusTooManyRequests {
+		t.Fatalf("3ra request: status=%d quiere 429", code)
+	}
+}
+
+func TestHandler_RateLimit_RejectsOverLimit(t *testing.T) {
+	// C55: capacidad 1 → 1ra OK, 2da = 429 + Retry-After header.
+	rl := NewTokenBucketRateLimiter(1, 0.01)
+	h, s := setupAuthHandler(t)
+	h.rl = rl
+	post, err := s.Create(hooksContext(), CreateInput{
+		Slug: "rl-reject", Title: "R", Content: "c",
+	})
+	if err != nil {
+		t.Fatalf("Create setup: %v", err)
+	}
+	idStr := strconv.FormatInt(post.ID, 10)
+	patch := func() *httptest.ResponseRecorder {
+		r := httptest.NewRequest("PATCH", "/posts/"+idStr, strings.NewReader(`{"title":"x"}`))
+		rec := httptest.NewRecorder()
+		h.AuthRequired(h.Patch).ServeHTTP(rec, r)
+		return rec
+	}
+	if code := patch().Code; code != http.StatusOK {
+		t.Fatalf("1ra request: status=%d quiere 200", code)
+	}
+	rec := patch()
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("2da request: status=%d quiere 429", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("Retry-After header debería estar presente (C55)")
+	}
+}
+
+func TestRateLimiter_DirectTokens(t *testing.T) {
+	// Unit directo del limiter (sin HTTP): capacity 1, refill lento.
+	rl := NewTokenBucketRateLimiter(1, 0.01)
+	if !rl.Allow("k").Allowed {
+		t.Fatal("1er Allow debería ser permitido")
+	}
+	if rl.Allow("k").Allowed {
+		t.Fatal("2do Allow debería ser rechazado (bucket vacío)")
+	}
+}
+
+func hooksContext() hooks.Context { return hooks.Context{Point: "post.validate"} }
+
 // === C53: Patch (PATCH /posts/{id}) ===
 
 func TestHandler_Patch_OK(t *testing.T) {

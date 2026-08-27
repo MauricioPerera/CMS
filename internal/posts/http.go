@@ -108,6 +108,9 @@ type Option func(*Handler)
 func WithLogger(l *slog.Logger) Option { return func(h *Handler) { h.log = l } }
 func WithTracer(t Tracer) Option        { return func(h *Handler) { h.tr = t } }
 func WithMetrics(m *Metrics) Option     { return func(h *Handler) { h.m = m } }
+func WithRateLimiter(rl RateLimiter) Option { // C55: rate limit write paths
+	return func(h *Handler) { h.rl = rl }
+}
 
 // Handler expone el read path de posts como REST.
 type Handler struct {
@@ -115,6 +118,7 @@ type Handler struct {
 	log          *slog.Logger
 	tr           Tracer
 	m            *Metrics
+	rl           RateLimiter   // C55: opcional; nil = sin rate limit
 	smux         *http.ServeMux
 	auth         AuthFunc
 	authRequired bool
@@ -489,10 +493,23 @@ func AuthRequiredEnable(b bool) Option { return func(h *Handler) { h.authRequire
 func WithAuth(f AuthFunc) Option        { return func(h *Handler) { h.auth = f } }
 
 // AuthRequired es middleware que rechaza (401) requests no autenticadas
-// en los write endpoints (C47).
+// en los write endpoints (C47). También aplica rate limiting (C55) cuando
+// h.rl está configurado: rechaza con 429 si el token bucket está vacío.
 func (h *Handler) AuthRequired(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !h.authRequired {
+			// Aunque auth esté OFF, rate limit (si configurado) sigue aplicándose a writes.
+			if h.rl != nil && isWriteMethod(r.Method) {
+				if res := h.rl.Allow(rateLimitKey(r)); !res.Allowed {
+					h.log.Error("posts.ratelimit.exceeded",
+						"key", rateLimitKey(r), "retry_after", res.RetryAfter)
+					w.Header().Set("Retry-After", res.RetryAfter.String())
+					writeJSON(w, http.StatusTooManyRequests, map[string]any{
+						"error": "rate limit exceeded",
+					})
+					return
+				}
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -505,6 +522,18 @@ func (h *Handler) AuthRequired(next http.HandlerFunc) http.HandlerFunc {
 		if !res.OK {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
 			return
+		}
+		// Rate limit (C55) post-auth, keyeado por usuario autenticado.
+		if h.rl != nil && isWriteMethod(r.Method) {
+			if rlRes := h.rl.Allow(rateLimitKey(r)); !rlRes.Allowed {
+				h.log.Error("posts.ratelimit.exceeded",
+					"user", res.User, "retry_after", rlRes.RetryAfter)
+				w.Header().Set("Retry-After", rlRes.RetryAfter.String())
+				writeJSON(w, http.StatusTooManyRequests, map[string]any{
+					"error": "rate limit exceeded",
+				})
+				return
+			}
 		}
 		// Inyectamos el usuario en el contexto para auditoría.
 		ctx := contextWithUser(r.Context(), res.User)
