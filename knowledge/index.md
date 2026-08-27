@@ -47,6 +47,7 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
   - [Auditor de `forbids` (advisory, no es un gate)](./contracts/forbids-audit.md) — `scripts/audit_forbids.py`
   - [Hook runtime — QuickJS embebido (GoPress)](./contracts/hooks-runtime.md)
   - [Hook registry — dispatch por point + prioridad (GoPress)](./contracts/hooks-registry.md)
+  - [t.Parallel() concurrency guards en tests hooks + posts (GoPress)](./contracts/parallel-tests.md)
 - [Recetas de arreglo por rule-id (no es un gate)](./contracts/rule-hints.md) — `scripts/rule_hints.py`
   - [Validador OKF de la base de conocimiento](./contracts/validate-okf.md)
   - [Validador de contratos de ejecución (specs)](./contracts/validate-specs.md)
@@ -65,6 +66,7 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
   - [Posts list/search (paginado + status)](./data_models/posts_list.md)
   - [Posts filter por author + tags](./data_models/posts_filter.md)
   - [Posts SLO + observabilidad operacional](./data_models/observability/slo_alerts.md)
+  - [Concurrency test strategy (t.Parallel + race-safe)](./data_models/concurrency_test_strategy.md)
   - [Limites de pago por pais](./data_models/payment_limits.md)
   - [Reglas de control de fronteras](./data_models/border_rules.md)
   - [Politica de workflows](./data_models/workflow_policy.md)

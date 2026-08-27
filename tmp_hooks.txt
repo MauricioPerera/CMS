@@ -1,0 +1,42 @@
+=== RUN   TestRuntime_ParallelCall
+=== PAUSE TestRuntime_ParallelCall
+=== RUN   TestRegistry_ParallelDistinctPoints
+=== PAUSE TestRegistry_ParallelDistinctPoints
+=== RUN   TestRuntime_EvalBasicJS
+--- PASS: TestRuntime_EvalBasicJS (0.00s)
+=== RUN   TestRuntime_RegisterAndCall
+--- PASS: TestRuntime_RegisterAndCall (0.00s)
+=== RUN   TestRegistry_PriorityOrder
+--- PASS: TestRegistry_PriorityOrder (0.00s)
+=== RUN   TestRuntime_TimeoutConfiguresHandler
+--- PASS: TestRuntime_TimeoutConfiguresHandler (0.01s)
+=== RUN   TestRuntime_MemoryLimitPreventsOOM
+--- PASS: TestRuntime_MemoryLimitPreventsOOM (0.00s)
+=== RUN   TestRegistry_DisabledHookSkipped
+--- PASS: TestRegistry_DisabledHookSkipped (0.00s)
+=== RUN   TestRegistry_ConcurrentSafe
+--- PASS: TestRegistry_ConcurrentSafe (0.01s)
+=== RUN   TestRuntime_CallNoHookError
+--- PASS: TestRuntime_CallNoHookError (0.00s)
+=== RUN   TestRuntime_CloseReleasesMemory
+--- PASS: TestRuntime_CloseReleasesMemory (0.00s)
+=== RUN   TestRegistry_UnregisterRemovesHook
+--- PASS: TestRegistry_UnregisterRemovesHook (0.00s)
+=== RUN   TestErrorWrapping
+--- PASS: TestErrorWrapping (0.00s)
+=== RUN   TestRuntime_EvalInvalidJS
+--- PASS: TestRuntime_EvalInvalidJS (0.00s)
+=== RUN   TestRegistry_CallBreakOnError
+--- PASS: TestRegistry_CallBreakOnError (0.00s)
+=== RUN   TestDebugNormalize
+    normalize_test.go:7: body repr: "function(ctx, payload) { payload.value = payload.value.toLowerCase(); return payload; }"
+    normalize_test.go:8: HasPrefix function: true
+    normalize_test.go:10: normalized: "function __hook(ctx, payload) { payload.value = payload.value.toLowerCase(); return payload; }"
+    normalize_test.go:14: body2 normalized: "function __hook(ctx, payload) {\n\t\t\tpayload.value = payload.value.toLowerCase();\n\t\t\treturn payload;\n\t\t}"
+--- PASS: TestDebugNormalize (0.00s)
+=== CONT  TestRuntime_ParallelCall
+=== CONT  TestRegistry_ParallelDistinctPoints
+--- PASS: TestRegistry_ParallelDistinctPoints (0.01s)
+--- PASS: TestRuntime_ParallelCall (0.01s)
+PASS
+ok  	gopress/internal/hooks	0.600s
